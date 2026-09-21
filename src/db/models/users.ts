@@ -6,7 +6,7 @@ export const users = pgTable('users', {
   name: text('name').notNull(),
   email: varchar('email', { length: 255 }).notNull().unique(),
   googleId: varchar('google_id', { length: 255 }).unique(),
-  password: text('password'), // أصبح اختياري ليدعم التسجيل عبر Google
+  password: text('password'), 
   phone: varchar('phone', { length: 20 }),
   role: userRoleEnum('role').default('STUDENT').notNull(),
   avatar: text('avatar'),

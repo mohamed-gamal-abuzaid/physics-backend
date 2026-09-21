@@ -16,6 +16,16 @@ import {
   UpdateProfileInput,
 } from './student.schema.js';
 
+export const canAccessAssignment = (
+  assignment: { studentId: number | null; assignedStudentIds: unknown },
+  userId: number,
+) => {
+  const assignedStudentIds = Array.isArray(assignment.assignedStudentIds)
+    ? assignment.assignedStudentIds
+    : [];
+  return assignment.studentId === userId || assignedStudentIds.includes(userId);
+};
+
 export class StudentService {
   async getDashboard(userId: number) {
     const [profile, assignmentList, sessionList, notificationList, submissionList] = await Promise.all([
