@@ -1,4 +1,4 @@
-import { and, desc, eq, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gt, or, sql } from 'drizzle-orm';
 import { db } from '../../db/index.js';
 import { assignments } from '../../db/models/assignments.js';
 import { bookingSessions } from '../../db/models/booking-sessions.js';
@@ -13,8 +13,11 @@ import {
   CreateReviewInput,
   CreateSessionInput,
   CreateSubmissionInput,
+  ListInput,
+  RescheduleSessionInput,
   UpdateProfileInput,
 } from './student.schema.js';
+import { getPagination, paginated } from '../../utils/pagination.js';
 
 export const canAccessAssignment = (
   assignment: { studentId: number | null; assignedStudentIds: unknown },
@@ -27,13 +30,13 @@ export const canAccessAssignment = (
 };
 
 export class StudentService {
-  async getDashboard(userId: number) {
+  async getDashboard(userId: number, input: ListInput) {
     const [profile, assignmentList, sessionList, notificationList, submissionList] = await Promise.all([
       this.getProfile(userId),
-      this.getAssignments(userId),
-      this.getSessions(userId),
-      this.getNotifications(userId),
-      this.getSubmissions(userId),
+      this.getAssignments(userId, input),
+      this.getSessions(userId, input),
+      this.getNotifications(userId, input),
+      this.getSubmissions(userId, input),
     ]);
 
     return {
@@ -81,11 +84,17 @@ export class StudentService {
     return updated;
   }
 
-  async getAssignments(userId: number) {
-    return db.select().from(assignments).where(or(
+  async getAssignments(userId: number, input: ListInput) {
+    const condition = or(
       eq(assignments.studentId, userId),
       sql`${assignments.assignedStudentIds} @> ${JSON.stringify([userId])}::jsonb`,
-    )).orderBy(desc(assignments.createdAt));
+    );
+    const { limit, offset } = getPagination(input);
+    const [items, [{ total }]] = await Promise.all([
+      db.select().from(assignments).where(condition).orderBy(desc(assignments.createdAt)).limit(limit).offset(offset),
+      db.select({ total: count() }).from(assignments).where(condition),
+    ]);
+    return paginated(items, input.page, input.limit, total);
   }
 
   async getAssignment(userId: number, assignmentId: number) {
@@ -100,14 +109,21 @@ export class StudentService {
     return assignment;
   }
 
-  async getSubmissions(userId: number) {
-    return db.select().from(homeworkSubmissions)
-      .where(eq(homeworkSubmissions.studentId, userId))
-      .orderBy(desc(homeworkSubmissions.submittedAt));
+  async getSubmissions(userId: number, input: ListInput) {
+    const condition = eq(homeworkSubmissions.studentId, userId);
+    const { limit, offset } = getPagination(input);
+    const [items, [{ total }]] = await Promise.all([
+      db.select().from(homeworkSubmissions).where(condition).orderBy(desc(homeworkSubmissions.submittedAt)).limit(limit).offset(offset),
+      db.select({ total: count() }).from(homeworkSubmissions).where(condition),
+    ]);
+    return paginated(items, input.page, input.limit, total);
   }
 
   async createSubmission(userId: number, assignmentId: number, data: CreateSubmissionInput) {
-    await this.getAssignment(userId, assignmentId);
+    const assignment = await this.getAssignment(userId, assignmentId);
+    if (assignment.dueDate && assignment.dueDate <= new Date()) {
+      throw new Error('ASSIGNMENT_DEADLINE_PASSED');
+    }
     const [existing] = await db.select({ id: homeworkSubmissions.id }).from(homeworkSubmissions)
       .where(and(eq(homeworkSubmissions.assignmentId, assignmentId), eq(homeworkSubmissions.studentId, userId)))
       .limit(1);
@@ -122,26 +138,96 @@ export class StudentService {
     return submission;
   }
 
-  async getSessions(userId: number) {
-    return db.select().from(bookingSessions).where(and(
+  async getSessions(userId: number, input: ListInput) {
+    const condition = and(
       eq(bookingSessions.studentId, userId),
       eq(bookingSessions.isArchived, false),
-    )).orderBy(desc(bookingSessions.date));
+    );
+    const { limit, offset } = getPagination(input);
+    const [items, [{ total }]] = await Promise.all([
+      db.select().from(bookingSessions).where(condition).orderBy(desc(bookingSessions.date)).limit(limit).offset(offset),
+      db.select({ total: count() }).from(bookingSessions).where(condition),
+    ]);
+    return paginated(items, input.page, input.limit, total);
   }
 
   async createSession(userId: number, data: CreateSessionInput) {
-    const [session] = await db.insert(bookingSessions).values({
-      ...data,
-      studentId: userId,
+    if (data.date <= new Date()) throw new Error('SESSION_DATE_INVALID');
+
+    const [teacher] = await db.select({ id: users.id }).from(users).where(and(
+      eq(users.id, data.teacherId),
+      eq(users.role, 'ADMIN'),
+      eq(users.status, 'ACTIVE'),
+    )).limit(1);
+    if (!teacher) throw new Error('TEACHER_NOT_FOUND');
+
+    if (data.assignedHomeworkId) {
+      await this.getAssignment(userId, data.assignedHomeworkId);
+    }
+
+    const [profile] = await db.select().from(studentProfiles)
+      .where(eq(studentProfiles.userId, userId)).limit(1);
+    const specificCredits = data.sessionFormat === 'PRIVATE'
+      ? (profile?.remainingPrivateCredits ?? 0)
+      : (profile?.remainingGroupCredits ?? 0);
+    const creditField = specificCredits > 0
+      ? (data.sessionFormat === 'PRIVATE' ? 'remainingPrivateCredits' : 'remainingGroupCredits')
+      : 'remainingCredits';
+    const availableCredits = specificCredits > 0 ? specificCredits : (profile?.remainingCredits ?? 0);
+    if (availableCredits < 1) throw new Error('INSUFFICIENT_CREDITS');
+
+    return db.transaction(async (transaction) => {
+      const creditColumn = studentProfiles[creditField];
+      const [updatedProfile] = await transaction.update(studentProfiles)
+        .set({ [creditField]: sql`${creditColumn} - 1` })
+        .where(and(eq(studentProfiles.userId, userId), gt(creditColumn, 0)))
+        .returning();
+      if (!updatedProfile) throw new Error('INSUFFICIENT_CREDITS');
+
+      const [session] = await transaction.insert(bookingSessions).values({
+        ...data,
+        studentId: userId,
+        date: data.date,
+        status: 'SCHEDULED',
+      }).returning();
+      return session;
+    });
+  }
+
+  async rescheduleSession(userId: number, sessionId: number, data: RescheduleSessionInput) {
+    if (data.date <= new Date()) throw new Error('SESSION_DATE_INVALID');
+    const [session] = await db.update(bookingSessions).set({
       date: data.date,
-      status: 'SCHEDULED',
-    }).returning();
+      time: data.time,
+      status: 'RESCHEDULED',
+    }).where(and(
+      eq(bookingSessions.id, sessionId),
+      eq(bookingSessions.studentId, userId),
+      eq(bookingSessions.status, 'SCHEDULED'),
+    )).returning();
+    if (!session) throw new Error('SESSION_NOT_FOUND');
     return session;
   }
 
-  async getNotifications(userId: number) {
-    return db.select().from(notifications).where(eq(notifications.userId, userId))
-      .orderBy(desc(notifications.createdAt));
+  async cancelSession(userId: number, sessionId: number) {
+    const [session] = await db.update(bookingSessions).set({ status: 'CANCELLED' })
+      .where(and(
+        eq(bookingSessions.id, sessionId),
+        eq(bookingSessions.studentId, userId),
+        eq(bookingSessions.status, 'SCHEDULED'),
+      )).returning();
+    if (!session) throw new Error('SESSION_NOT_FOUND');
+    return session;
+  }
+
+  async getNotifications(userId: number, input: ListInput) {
+    const condition = eq(notifications.userId, userId);
+    const { limit, offset } = getPagination(input);
+    const [items, [{ total }]] = await Promise.all([
+      db.select().from(notifications).where(condition).orderBy(desc(notifications.createdAt)).limit(limit).offset(offset),
+      db.select({ total: count() }).from(notifications).where(condition),
+    ]);
+    return paginated(items, input.page, input.limit, total);
   }
 
   async markNotificationRead(userId: number, notificationId: number) {
@@ -151,13 +237,29 @@ export class StudentService {
     return notification;
   }
 
-  async getResources() {
-    return db.select().from(resources).orderBy(desc(resources.uploadDate));
+  async getResources(input: ListInput) {
+    const condition = input.search
+      ? sql`lower(${resources.title}) like ${`%${input.search.toLowerCase()}%`}`
+      : undefined;
+    const { limit, offset } = getPagination(input);
+    const [items, [{ total }]] = await Promise.all([
+      db.select().from(resources).where(condition).orderBy(desc(resources.uploadDate)).limit(limit).offset(offset),
+      db.select({ total: count() }).from(resources).where(condition),
+    ]);
+    return paginated(items, input.page, input.limit, total);
   }
 
-  async getPayments(userId: number) {
-    return db.select().from(paymentProofs).where(eq(paymentProofs.studentId, userId))
-      .orderBy(desc(paymentProofs.submittedAt));
+  async getPayments(userId: number, input: ListInput) {
+    const condition = and(
+      eq(paymentProofs.studentId, userId),
+      input.status ? eq(paymentProofs.status, input.status as 'PENDING' | 'APPROVED' | 'REJECTED') : undefined,
+    );
+    const { limit, offset } = getPagination(input);
+    const [items, [{ total }]] = await Promise.all([
+      db.select().from(paymentProofs).where(condition).orderBy(desc(paymentProofs.submittedAt)).limit(limit).offset(offset),
+      db.select({ total: count() }).from(paymentProofs).where(condition),
+    ]);
+    return paginated(items, input.page, input.limit, total);
   }
 
   async createPayment(userId: number, data: CreatePaymentInput) {

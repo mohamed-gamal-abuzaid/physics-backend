@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import { paginationSchema } from '../../utils/pagination.js';
+
+export const listSchema = paginationSchema.extend({
+  search: z.string().trim().max(100).optional(),
+  role: z.enum(['ADMIN', 'STUDENT']).optional(),
+  status: z.string().max(50).optional(),
+});
 
 export const updateUserSchema = z.object({
   name: z.string().min(2).max(50).optional(),
