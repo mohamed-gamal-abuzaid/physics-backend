@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1789754832402,
+      "tag": "0000_whole_lockheed",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790003762375,
+      "tag": "0001_fat_mentor",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790007448186,
+      "tag": "0002_puzzling_doctor_faustus",
+      "breakpoints": true
+    }
+  ]
+}
