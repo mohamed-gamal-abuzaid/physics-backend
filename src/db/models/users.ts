@@ -1,4 +1,4 @@
-import { pgTable, serial, text, varchar, timestamp, integer, decimal } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, varchar, timestamp, integer, decimal, boolean } from 'drizzle-orm/pg-core';
 import { userRoleEnum } from './enums.js';
 
 export const users = pgTable('users', {
@@ -36,6 +36,13 @@ export const studentProfiles = pgTable('student_profiles', {
   examBoard: text('exam_board'),
   examSession: text('exam_session'),
   hardestTopic: text('hardest_topic'),
+  meetingLink: text('meeting_link'),
+  isAccountGranted: boolean('is_account_granted').default(false),
+  generatedPassword: text('generated_password'),
+  passwordGeneratedAt: timestamp('password_generated_at'),
+  assignedTeacherId: integer('assigned_teacher_id').references(() => users.id, { onDelete: 'set null' }),
+  registeredVia: varchar('registered_via', { length: 100 }),
+  joinedDate: timestamp('joined_date').defaultNow(),
   notes: text('notes'),
 });
 
