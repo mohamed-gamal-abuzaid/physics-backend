@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '../../db/index.js';
 import { appSettings } from '../../db/models/app-settings.js';
@@ -8,7 +8,7 @@ import { bookingSessions } from '../../db/models/booking-sessions.js';
 import { homeworkSubmissions } from '../../db/models/homework-submissions.js';
 import { paymentProofs } from '../../db/models/payment-proofs.js';
 import { resources } from '../../db/models/resources.js';
-import { users } from '../../db/models/users.js';
+import { studentProfiles, users } from '../../db/models/users.js';
 import {
   assignmentSchema,
   gradeSchema,
@@ -17,7 +17,9 @@ import {
   sessionStatusSchema,
   settingsSchema,
   updateUserSchema,
+  listSchema,
 } from './admin.schema.js';
+import { getPagination, paginated } from '../../utils/pagination.js';
 
 type UserUpdate = z.infer<typeof updateUserSchema>;
 type AssignmentInput = z.infer<typeof assignmentSchema>;
@@ -28,11 +30,18 @@ type ResourceInput = z.infer<typeof resourceSchema>;
 type SettingsInput = z.infer<typeof settingsSchema>;
 
 export class AdminService {
-  async listUsers(search?: string) {
-    return db.select({
+  async listUsers(input: z.infer<typeof listSchema>) {
+    const condition = and(
+      input.search ? ilike(users.email, `%${input.search}%`) : undefined,
+      input.role ? eq(users.role, input.role) : undefined,
+      input.status ? eq(users.status, input.status) : undefined,
+    );
+    const { limit, offset } = getPagination(input);
+    const [items, [{ total }]] = await Promise.all([db.select({
       id: users.id, name: users.name, email: users.email, phone: users.phone,
       role: users.role, status: users.status, createdAt: users.createdAt,
-    }).from(users).where(search ? ilike(users.email, `%${search}%`) : undefined).orderBy(desc(users.createdAt));
+    }).from(users).where(condition).orderBy(desc(users.createdAt)).limit(limit).offset(offset), db.select({ total: count() }).from(users).where(condition)]);
+    return paginated(items, input.page, input.limit, total);
   }
 
   async updateUser(id: number, data: UserUpdate) {
@@ -42,7 +51,12 @@ export class AdminService {
     return user;
   }
 
-  async listAssignments() { return db.select().from(assignments).orderBy(desc(assignments.createdAt)); }
+  async listAssignments(input: z.infer<typeof listSchema>) {
+    const condition = input.search ? ilike(assignments.title, `%${input.search}%`) : undefined;
+    const { limit, offset } = getPagination(input);
+    const [items, [{ total }]] = await Promise.all([db.select().from(assignments).where(condition).orderBy(desc(assignments.createdAt)).limit(limit).offset(offset), db.select({ total: count() }).from(assignments).where(condition)]);
+    return paginated(items, input.page, input.limit, total);
+  }
 
   async createAssignment(data: AssignmentInput) {
     const [assignment] = await db.insert(assignments).values(data).returning();
@@ -60,7 +74,11 @@ export class AdminService {
     if (!assignment) throw new Error('ASSIGNMENT_NOT_FOUND');
   }
 
-  async listSubmissions() { return db.select().from(homeworkSubmissions).orderBy(desc(homeworkSubmissions.submittedAt)); }
+  async listSubmissions(input: z.infer<typeof listSchema>) {
+    const { limit, offset } = getPagination(input);
+    const [items, [{ total }]] = await Promise.all([db.select().from(homeworkSubmissions).orderBy(desc(homeworkSubmissions.submittedAt)).limit(limit).offset(offset), db.select({ total: count() }).from(homeworkSubmissions)]);
+    return paginated(items, input.page, input.limit, total);
+  }
 
   async gradeSubmission(id: number, data: GradeInput) {
     const [submission] = await db.update(homeworkSubmissions).set({
@@ -73,7 +91,12 @@ export class AdminService {
     return submission;
   }
 
-  async listSessions() { return db.select().from(bookingSessions).orderBy(desc(bookingSessions.date)); }
+  async listSessions(input: z.infer<typeof listSchema>) {
+    const condition = input.status ? eq(bookingSessions.status, input.status as 'SCHEDULED' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED') : undefined;
+    const { limit, offset } = getPagination(input);
+    const [items, [{ total }]] = await Promise.all([db.select().from(bookingSessions).where(condition).orderBy(desc(bookingSessions.date)).limit(limit).offset(offset), db.select({ total: count() }).from(bookingSessions).where(condition)]);
+    return paginated(items, input.page, input.limit, total);
+  }
 
   async updateSession(id: number, data: SessionStatusInput) {
     const [session] = await db.update(bookingSessions).set(data).where(eq(bookingSessions.id, id)).returning();
@@ -81,21 +104,48 @@ export class AdminService {
     return session;
   }
 
-  async listPayments() { return db.select().from(paymentProofs).orderBy(desc(paymentProofs.submittedAt)); }
-
-  async reviewPayment(id: number, adminId: number, data: PaymentReviewInput) {
-    const [payment] = await db.update(paymentProofs).set({
-      status: data.status,
-      notes: data.notes,
-      rejectionReason: data.rejectionReason,
-      reviewedBy: adminId,
-      reviewedAt: new Date(),
-    }).where(eq(paymentProofs.id, id)).returning();
-    if (!payment) throw new Error('PAYMENT_NOT_FOUND');
-    return payment;
+  async listPayments(input: z.infer<typeof listSchema>) {
+    const condition = input.status ? eq(paymentProofs.status, input.status as 'PENDING' | 'APPROVED' | 'REJECTED') : undefined;
+    const { limit, offset } = getPagination(input);
+    const [items, [{ total }]] = await Promise.all([db.select().from(paymentProofs).where(condition).orderBy(desc(paymentProofs.submittedAt)).limit(limit).offset(offset), db.select({ total: count() }).from(paymentProofs).where(condition)]);
+    return paginated(items, input.page, input.limit, total);
   }
 
-  async listResources() { return db.select().from(resources).orderBy(desc(resources.uploadDate)); }
+  async reviewPayment(id: number, adminId: number, data: PaymentReviewInput) {
+    return db.transaction(async (transaction) => {
+      const [current] = await transaction.select().from(paymentProofs)
+        .where(eq(paymentProofs.id, id)).limit(1);
+      if (!current) throw new Error('PAYMENT_NOT_FOUND');
+      if (current.status === 'APPROVED') throw new Error('PAYMENT_ALREADY_REVIEWED');
+
+      const [payment] = await transaction.update(paymentProofs).set({
+        status: data.status,
+        notes: data.notes,
+        rejectionReason: data.rejectionReason,
+        reviewedBy: adminId,
+        reviewedAt: new Date(),
+      }).where(eq(paymentProofs.id, id)).returning();
+
+      if (data.status === 'APPROVED' && current.sessionsCount && current.sessionsCount > 0) {
+        const creditType = (current.creditType || '').toUpperCase();
+        const changes = creditType === 'PRIVATE'
+          ? { remainingPrivateCredits: sql`${studentProfiles.remainingPrivateCredits} + ${current.sessionsCount}` }
+          : creditType === 'GROUP'
+            ? { remainingGroupCredits: sql`${studentProfiles.remainingGroupCredits} + ${current.sessionsCount}` }
+            : { remainingCredits: sql`${studentProfiles.remainingCredits} + ${current.sessionsCount}` };
+        await transaction.update(studentProfiles).set(changes).where(eq(studentProfiles.userId, current.studentId));
+      }
+
+      return payment;
+    });
+  }
+
+  async listResources(input: z.infer<typeof listSchema>) {
+    const condition = input.search ? ilike(resources.title, `%${input.search}%`) : undefined;
+    const { limit, offset } = getPagination(input);
+    const [items, [{ total }]] = await Promise.all([db.select().from(resources).where(condition).orderBy(desc(resources.uploadDate)).limit(limit).offset(offset), db.select({ total: count() }).from(resources).where(condition)]);
+    return paginated(items, input.page, input.limit, total);
+  }
 
   async createResource(data: ResourceInput) {
     const [resource] = await db.insert(resources).values(data).returning();

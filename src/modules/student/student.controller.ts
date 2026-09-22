@@ -6,6 +6,8 @@ import {
   createReviewSchema,
   createSessionSchema,
   createSubmissionSchema,
+  listSchema,
+  rescheduleSessionSchema,
   updateProfileSchema,
 } from './student.schema.js';
 
@@ -20,13 +22,20 @@ const handleError = (res: Response, error: any) => {
     ASSIGNMENT_NOT_FOUND: 404,
     NOTIFICATION_NOT_FOUND: 404,
     SUBMISSION_EXISTS: 409,
+    TEACHER_NOT_FOUND: 404,
+    SESSION_NOT_FOUND: 404,
+    SESSION_DATE_INVALID: 400,
+    INSUFFICIENT_CREDITS: 400,
+    ASSIGNMENT_DEADLINE_PASSED: 400,
   };
   const status = statuses[error.message] || 500;
   return res.status(status).json({ message: status === 500 ? 'An error occurred' : error.message });
 };
 
 export const dashboard = async (req: AuthRequest, res: Response) => {
-  try { return res.json({ dashboard: await studentService.getDashboard(userId(req)) }); }
+  const validation = listSchema.safeParse(req.query);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try { return res.json({ dashboard: await studentService.getDashboard(userId(req), validation.data) }); }
   catch (error) { return handleError(res, error); }
 };
 
@@ -43,7 +52,9 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
 };
 
 export const assignments = async (req: AuthRequest, res: Response) => {
-  try { return res.json({ assignments: await studentService.getAssignments(userId(req)) }); }
+  const validation = listSchema.safeParse(req.query);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try { return res.json({ assignments: await studentService.getAssignments(userId(req), validation.data) }); }
   catch (error) { return handleError(res, error); }
 };
 
@@ -53,7 +64,9 @@ export const assignment = async (req: AuthRequest, res: Response) => {
 };
 
 export const submissions = async (req: AuthRequest, res: Response) => {
-  try { return res.json({ submissions: await studentService.getSubmissions(userId(req)) }); }
+  const validation = listSchema.safeParse(req.query);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try { return res.json({ submissions: await studentService.getSubmissions(userId(req), validation.data) }); }
   catch (error) { return handleError(res, error); }
 };
 
@@ -67,7 +80,9 @@ export const submitAssignment = async (req: AuthRequest, res: Response) => {
 };
 
 export const sessions = async (req: AuthRequest, res: Response) => {
-  try { return res.json({ sessions: await studentService.getSessions(userId(req)) }); }
+  const validation = listSchema.safeParse(req.query);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try { return res.json({ sessions: await studentService.getSessions(userId(req), validation.data) }); }
   catch (error) { return handleError(res, error); }
 };
 
@@ -78,8 +93,22 @@ export const createSession = async (req: AuthRequest, res: Response) => {
   catch (error) { return handleError(res, error); }
 };
 
+export const rescheduleSession = async (req: AuthRequest, res: Response) => {
+  const validation = rescheduleSessionSchema.safeParse(req.body);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try { return res.json({ session: await studentService.rescheduleSession(userId(req), Number(req.params.id), validation.data) }); }
+  catch (error) { return handleError(res, error); }
+};
+
+export const cancelSession = async (req: AuthRequest, res: Response) => {
+  try { return res.json({ session: await studentService.cancelSession(userId(req), Number(req.params.id)) }); }
+  catch (error) { return handleError(res, error); }
+};
+
 export const notifications = async (req: AuthRequest, res: Response) => {
-  try { return res.json({ notifications: await studentService.getNotifications(userId(req)) }); }
+  const validation = listSchema.safeParse(req.query);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try { return res.json({ notifications: await studentService.getNotifications(userId(req), validation.data) }); }
   catch (error) { return handleError(res, error); }
 };
 
@@ -88,13 +117,17 @@ export const markNotificationRead = async (req: AuthRequest, res: Response) => {
   catch (error) { return handleError(res, error); }
 };
 
-export const resources = async (_req: AuthRequest, res: Response) => {
-  try { return res.json({ resources: await studentService.getResources() }); }
+export const resources = async (req: AuthRequest, res: Response) => {
+  const validation = listSchema.safeParse(req.query);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try { return res.json({ resources: await studentService.getResources(validation.data) }); }
   catch (error) { return handleError(res, error); }
 };
 
 export const payments = async (req: AuthRequest, res: Response) => {
-  try { return res.json({ payments: await studentService.getPayments(userId(req)) }); }
+  const validation = listSchema.safeParse(req.query);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try { return res.json({ payments: await studentService.getPayments(userId(req), validation.data) }); }
   catch (error) { return handleError(res, error); }
 };
 

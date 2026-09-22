@@ -107,21 +107,23 @@ const router = Router();
  *     responses: { 201: { description: Review created } }
  */
 
-router.get('/dashboard', authenticate, controller.dashboard);
-router.get('/profile', authenticate, controller.profile);
-router.patch('/profile', authenticate, controller.updateProfile);
-router.get('/assignments', authenticate, controller.assignments);
-router.get('/assignments/:id', authenticate, controller.assignment);
-router.get('/submissions', authenticate, controller.submissions);
-router.post('/assignments/:assignmentId/submissions', authenticate, controller.submitAssignment);
-router.get('/sessions', authenticate, controller.sessions);
-router.post('/sessions', authenticate, controller.createSession);
-router.get('/notifications', authenticate, controller.notifications);
-router.patch('/notifications/:id/read', authenticate, controller.markNotificationRead);
-router.get('/resources', authenticate, controller.resources);
-router.get('/payments', authenticate, controller.payments);
-router.post('/payments', authenticate, controller.createPayment);
-router.get('/reviews', authenticate, controller.reviews);
-router.post('/reviews', authenticate, controller.createReview);
+router.get('/dashboard', authenticate, authorize('student'), controller.dashboard);
+router.get('/profile', authenticate, authorize('student'), controller.profile);
+router.patch('/profile', authenticate, authorize('student'), controller.updateProfile);
+router.get('/assignments', authenticate, authorize('student'), controller.assignments);
+router.get('/assignments/:id', authenticate, authorize('student'), controller.assignment);
+router.get('/submissions', authenticate, authorize('student'), controller.submissions);
+router.post('/assignments/:assignmentId/submissions', authenticate, authorize('student'), controller.submitAssignment);
+router.get('/sessions', authenticate, authorize('student'), controller.sessions);
+router.post('/sessions', authenticate, authorize('student'), controller.createSession);
+router.patch('/sessions/:id/reschedule', authenticate, authorize('student'), controller.rescheduleSession);
+router.patch('/sessions/:id/cancel', authenticate, authorize('student'), controller.cancelSession);
+router.get('/notifications', authenticate, authorize('student'), controller.notifications);
+router.patch('/notifications/:id/read', authenticate, authorize('student'), controller.markNotificationRead);
+router.get('/resources', authenticate, authorize('student'), controller.resources);
+router.get('/payments', authenticate, authorize('student'), controller.payments);
+router.post('/payments', authenticate, authorize('student'), controller.createPayment);
+router.get('/reviews', authenticate, authorize('student'), controller.reviews);
+router.post('/reviews', authenticate, authorize('student'), controller.createReview);
 
 export default router;

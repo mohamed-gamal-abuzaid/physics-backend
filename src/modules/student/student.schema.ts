@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import { paginationSchema } from '../../utils/pagination.js';
+
+export const listSchema = paginationSchema.extend({
+  search: z.string().trim().max(100).optional(),
+  status: z.string().max(50).optional(),
+});
 
 export const updateProfileSchema = z.object({
   name: z.string().min(2).max(50).optional(),
@@ -25,6 +31,11 @@ export const createSessionSchema = z.object({
   notes: z.string().max(2000).optional(),
 });
 
+export const rescheduleSessionSchema = z.object({
+  date: z.coerce.date(),
+  time: z.string().max(50).optional(),
+});
+
 export const createPaymentSchema = z.object({
   packageName: z.string().max(255).optional(),
   sessionsCount: z.number().int().positive().optional(),
@@ -48,3 +59,5 @@ export type CreateSubmissionInput = z.infer<typeof createSubmissionSchema>;
 export type CreateSessionInput = z.infer<typeof createSessionSchema>;
 export type CreatePaymentInput = z.infer<typeof createPaymentSchema>;
 export type CreateReviewInput = z.infer<typeof createReviewSchema>;
+export type ListInput = z.infer<typeof listSchema>;
+export type RescheduleSessionInput = z.infer<typeof rescheduleSessionSchema>;
