@@ -6,11 +6,13 @@ export { bookingSessions } from './models/booking-sessions.js';
 export { campaigns } from './models/campaigns.js';
 export { hallOfFame } from './models/hall-of-fame.js';
 export { homeworkSubmissions } from './models/homework-submissions.js';
+export { invoices } from './models/invoices.js';
 export { notifications } from './models/notifications.js';
 export { outboxEmails } from './models/outbox-emails.js';
 export { paymentProofs } from './models/payment-proofs.js';
 export { resources } from './models/resources.js';
 export { reviews } from './models/reviews.js';
+export { tickets } from './models/tickets.js';
 
 export {
 	userRoleEnum,

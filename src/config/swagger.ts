@@ -9,6 +9,7 @@ const options: swaggerJSDoc.Options = {
       description: 'API Documentation for Physics Learning Platform Backend',
     },
     tags: [
+      { name: 'Public', description: 'Unauthenticated public visitor and landing page endpoints' },
       { name: 'Auth', description: 'Registration, login, and current user' },
       { name: 'Student', description: 'Authenticated student operations' },
       { name: 'Admin / Teacher', description: 'Administrative and teaching operations' },
