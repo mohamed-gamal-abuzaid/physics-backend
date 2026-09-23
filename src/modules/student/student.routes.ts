@@ -78,10 +78,22 @@ const router = Router();
  *     responses: { 200: { description: Notification updated } }
  * /api/student/resources:
  *   get:
- *     summary: List learning resources
+ *     summary: List learning resources with category filtering
  *     tags: [Student]
  *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { name: search, in: query, schema: { type: string } }
+ *       - { name: category, in: query, schema: { type: string } }
+ *       - { name: course, in: query, schema: { type: string } }
+ *       - { name: topic, in: query, schema: { type: string } }
  *     responses: { 200: { description: Resource list } }
+ * /api/student/resources/{id}/download:
+ *   post:
+ *     summary: Increment resource download counter and get file download details
+ *     tags: [Student]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses: { 200: { description: Resource download info }, 404: { description: Resource not found } }
  * /api/student/payments:
  *   get:
  *     summary: List the student's payment proofs
@@ -105,6 +117,65 @@ const router = Router();
  *     tags: [Student]
  *     security: [{ bearerAuth: [] }]
  *     responses: { 201: { description: Review created } }
+ * /api/student/invoices:
+ *   get:
+ *     summary: List student billing invoices
+ *     tags: [Student]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Invoice list } }
+ * /api/student/invoices/{id}:
+ *   get:
+ *     summary: Get single invoice receipt details
+ *     tags: [Student]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses: { 200: { description: Invoice details }, 404: { description: Invoice not found } }
+ * /api/student/tickets:
+ *   get:
+ *     summary: List student support helpdesk tickets
+ *     tags: [Student]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Ticket list } }
+ *   post:
+ *     summary: Create a support ticket (NewTicketModal)
+ *     tags: [Student]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [subject, category, message]
+ *             properties:
+ *               subject: { type: string, example: "Question regarding electromagnetism" }
+ *               category: { type: string, example: "Academic Question" }
+ *               priority: { type: string, enum: [LOW, MEDIUM, HIGH, URGENT], default: MEDIUM }
+ *               message: { type: string, example: "Hello, I need help with problem 3 on worksheet 4." }
+ *     responses: { 201: { description: Ticket created } }
+ * /api/student/tickets/{id}:
+ *   get:
+ *     summary: Get single ticket conversation thread
+ *     tags: [Student]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses: { 200: { description: Ticket details }, 404: { description: Ticket not found } }
+ * /api/student/tickets/{id}/messages:
+ *   post:
+ *     summary: Add reply message to support ticket
+ *     tags: [Student]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [text]
+ *             properties:
+ *               text: { type: string, example: "Thank you for the clarification!" }
+ *     responses: { 200: { description: Reply appended } }
  */
 
 router.get('/dashboard', authenticate, authorize('student'), controller.dashboard);
@@ -121,9 +192,16 @@ router.patch('/sessions/:id/cancel', authenticate, authorize('student'), control
 router.get('/notifications', authenticate, authorize('student'), controller.notifications);
 router.patch('/notifications/:id/read', authenticate, authorize('student'), controller.markNotificationRead);
 router.get('/resources', authenticate, authorize('student'), controller.resources);
+router.post('/resources/:id/download', authenticate, authorize('student'), controller.downloadResource);
 router.get('/payments', authenticate, authorize('student'), controller.payments);
 router.post('/payments', authenticate, authorize('student'), controller.createPayment);
 router.get('/reviews', authenticate, authorize('student'), controller.reviews);
 router.post('/reviews', authenticate, authorize('student'), controller.createReview);
+router.get('/invoices', authenticate, authorize('student'), controller.invoices);
+router.get('/invoices/:id', authenticate, authorize('student'), controller.invoice);
+router.get('/tickets', authenticate, authorize('student'), controller.tickets);
+router.post('/tickets', authenticate, authorize('student'), controller.createTicket);
+router.get('/tickets/:id', authenticate, authorize('student'), controller.ticket);
+router.post('/tickets/:id/messages', authenticate, authorize('student'), controller.addTicketMessage);
 
 export default router;

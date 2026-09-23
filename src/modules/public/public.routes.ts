@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   bookSessionInquiry,
+  getCertificate,
   getConfig,
   getHallOfFame,
   getPaymentChannels,
@@ -26,6 +27,20 @@ const router = Router();
  *     responses:
  *       200:
  *         description: List of alumni
+ * /api/public/certificates/{certificateId}:
+ *   get:
+ *     summary: Verify and fetch alumni certificate details (CertificateModal)
+ *     tags: [Public]
+ *     parameters:
+ *       - name: certificateId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, example: "CERT-2025-8821" }
+ *     responses:
+ *       200:
+ *         description: Certificate details
+ *       404:
+ *         description: Certificate not found
  * /api/public/reviews:
  *   get:
  *     summary: List approved student testimonials for the landing page
@@ -92,6 +107,7 @@ const router = Router();
 
 router.get('/config', getConfig);
 router.get('/hall-of-fame', getHallOfFame);
+router.get('/certificates/:certificateId', getCertificate);
 router.get('/reviews', getReviews);
 router.get('/payment-channels', getPaymentChannels);
 router.post('/trial', registerTrial);

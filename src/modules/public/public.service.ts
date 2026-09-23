@@ -79,6 +79,33 @@ export class PublicService {
       .orderBy(desc(hallOfFame.graduationDate));
   }
 
+  async getCertificate(certificateId: string) {
+    const [alumni] = await db
+      .select({
+        id: hallOfFame.id,
+        studentName: hallOfFame.studentName,
+        avatar: hallOfFame.avatar,
+        cohort: hallOfFame.cohort,
+        superlativeBadge: hallOfFame.superlativeBadge,
+        quote: hallOfFame.quote,
+        admittedUniversity: hallOfFame.admittedUniversity,
+        gradeOrScore: hallOfFame.gradeOrScore,
+        curriculum: hallOfFame.curriculum,
+        majorField: hallOfFame.majorField,
+        mentorLetter: hallOfFame.mentorLetter,
+        mentorName: hallOfFame.mentorName,
+        graduationDate: hallOfFame.graduationDate,
+        honors: hallOfFame.honors,
+        certificateId: hallOfFame.certificateId,
+      })
+      .from(hallOfFame)
+      .where(eq(hallOfFame.certificateId, certificateId))
+      .limit(1);
+
+    if (!alumni) throw new Error('CERTIFICATE_NOT_FOUND');
+    return alumni;
+  }
+
   async getReviews() {
     return db
       .select({

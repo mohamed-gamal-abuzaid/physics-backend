@@ -68,3 +68,16 @@ export const bookSessionInquiry = async (req: Request, res: Response) => {
     return res.status(500).json({ message: 'Failed to submit booking inquiry' });
   }
 };
+
+export const getCertificate = async (req: Request, res: Response) => {
+  try {
+    const alumni = await publicService.getCertificate(req.params.certificateId as string);
+    return res.json({ alumni });
+  } catch (error: any) {
+    if (error.message === 'CERTIFICATE_NOT_FOUND') {
+      return res.status(404).json({ message: 'Certificate not found or invalid' });
+    }
+    return res.status(500).json({ message: 'Failed to verify certificate' });
+  }
+};
+

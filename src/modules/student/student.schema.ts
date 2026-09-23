@@ -54,10 +54,33 @@ export const createReviewSchema = z.object({
   rating: z.number().int().min(1).max(5).default(5),
 });
 
+export const createTicketSchema = z.object({
+  subject: z.string().trim().min(3, 'Subject must be at least 3 characters').max(255),
+  category: z.string().trim().min(2, 'Category is required').max(100),
+  priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).default('MEDIUM'),
+  message: z.string().trim().min(3, 'Message must be at least 3 characters').max(5000),
+  requesterRole: z.enum(['student', 'parent']).default('student'),
+});
+
+export const addTicketMessageSchema = z.object({
+  text: z.string().trim().min(1, 'Message text is required').max(5000),
+});
+
+export const resourceListSchema = paginationSchema.extend({
+  search: z.string().trim().max(100).optional(),
+  category: z.string().trim().max(100).optional(),
+  course: z.string().trim().max(100).optional(),
+  topic: z.string().trim().max(100).optional(),
+});
+
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 export type CreateSubmissionInput = z.infer<typeof createSubmissionSchema>;
 export type CreateSessionInput = z.infer<typeof createSessionSchema>;
 export type CreatePaymentInput = z.infer<typeof createPaymentSchema>;
 export type CreateReviewInput = z.infer<typeof createReviewSchema>;
+export type CreateTicketInput = z.infer<typeof createTicketSchema>;
+export type AddTicketMessageInput = z.infer<typeof addTicketMessageSchema>;
 export type ListInput = z.infer<typeof listSchema>;
+export type ResourceListInput = z.infer<typeof resourceListSchema>;
 export type RescheduleSessionInput = z.infer<typeof rescheduleSessionSchema>;
+
