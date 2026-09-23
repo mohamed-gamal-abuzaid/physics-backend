@@ -2,12 +2,15 @@ import { Response } from 'express';
 import { AuthRequest } from '../../middlewares/auth.middleware.js';
 import { studentService } from './student.service.js';
 import {
+  addTicketMessageSchema,
   createPaymentSchema,
   createReviewSchema,
   createSessionSchema,
   createSubmissionSchema,
+  createTicketSchema,
   listSchema,
   rescheduleSessionSchema,
+  resourceListSchema,
   updateProfileSchema,
 } from './student.schema.js';
 
@@ -27,6 +30,10 @@ const handleError = (res: Response, error: any) => {
     SESSION_DATE_INVALID: 400,
     INSUFFICIENT_CREDITS: 400,
     ASSIGNMENT_DEADLINE_PASSED: 400,
+    RESOURCE_NOT_FOUND: 404,
+    INVOICE_NOT_FOUND: 404,
+    TICKET_NOT_FOUND: 404,
+    TICKET_CLOSED: 400,
   };
   const status = statuses[error.message] || 500;
   return res.status(status).json({ message: status === 500 ? 'An error occurred' : error.message });
@@ -118,9 +125,14 @@ export const markNotificationRead = async (req: AuthRequest, res: Response) => {
 };
 
 export const resources = async (req: AuthRequest, res: Response) => {
-  const validation = listSchema.safeParse(req.query);
+  const validation = resourceListSchema.safeParse(req.query);
   if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
   try { return res.json({ resources: await studentService.getResources(validation.data) }); }
+  catch (error) { return handleError(res, error); }
+};
+
+export const downloadResource = async (req: AuthRequest, res: Response) => {
+  try { return res.json({ resource: await studentService.downloadResource(Number(req.params.id)) }); }
   catch (error) { return handleError(res, error); }
 };
 
@@ -147,5 +159,43 @@ export const createReview = async (req: AuthRequest, res: Response) => {
   const validation = createReviewSchema.safeParse(req.body);
   if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
   try { return res.status(201).json({ review: await studentService.createReview(userId(req), validation.data) }); }
+  catch (error) { return handleError(res, error); }
+};
+
+export const invoices = async (req: AuthRequest, res: Response) => {
+  const validation = listSchema.safeParse(req.query);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try { return res.json({ invoices: await studentService.getInvoices(userId(req), validation.data) }); }
+  catch (error) { return handleError(res, error); }
+};
+
+export const invoice = async (req: AuthRequest, res: Response) => {
+  try { return res.json({ invoice: await studentService.getInvoice(userId(req), Number(req.params.id)) }); }
+  catch (error) { return handleError(res, error); }
+};
+
+export const tickets = async (req: AuthRequest, res: Response) => {
+  const validation = listSchema.safeParse(req.query);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try { return res.json({ tickets: await studentService.getTickets(userId(req), validation.data) }); }
+  catch (error) { return handleError(res, error); }
+};
+
+export const ticket = async (req: AuthRequest, res: Response) => {
+  try { return res.json({ ticket: await studentService.getTicket(userId(req), Number(req.params.id)) }); }
+  catch (error) { return handleError(res, error); }
+};
+
+export const createTicket = async (req: AuthRequest, res: Response) => {
+  const validation = createTicketSchema.safeParse(req.body);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try { return res.status(201).json({ ticket: await studentService.createTicket(userId(req), validation.data) }); }
+  catch (error) { return handleError(res, error); }
+};
+
+export const addTicketMessage = async (req: AuthRequest, res: Response) => {
+  const validation = addTicketMessageSchema.safeParse(req.body);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try { return res.json({ ticket: await studentService.addTicketMessage(userId(req), Number(req.params.id), validation.data) }); }
   catch (error) { return handleError(res, error); }
 };

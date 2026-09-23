@@ -1,19 +1,25 @@
 import { and, count, desc, eq, gt, or, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { db } from '../../db/index.js';
 import { assignments } from '../../db/models/assignments.js';
 import { bookingSessions } from '../../db/models/booking-sessions.js';
 import { homeworkSubmissions } from '../../db/models/homework-submissions.js';
+import { invoices } from '../../db/models/invoices.js';
 import { notifications } from '../../db/models/notifications.js';
 import { paymentProofs } from '../../db/models/payment-proofs.js';
 import { resources } from '../../db/models/resources.js';
 import { reviews } from '../../db/models/reviews.js';
+import { tickets, TicketMessage } from '../../db/models/tickets.js';
 import { studentProfiles, users } from '../../db/models/users.js';
 import {
+  AddTicketMessageInput,
   CreatePaymentInput,
   CreateReviewInput,
   CreateSessionInput,
   CreateSubmissionInput,
+  CreateTicketInput,
   ListInput,
+  ResourceListInput,
   RescheduleSessionInput,
   UpdateProfileInput,
 } from './student.schema.js';
@@ -237,16 +243,29 @@ export class StudentService {
     return notification;
   }
 
-  async getResources(input: ListInput) {
-    const condition = input.search
-      ? sql`lower(${resources.title}) like ${`%${input.search.toLowerCase()}%`}`
-      : undefined;
+  async getResources(input: ResourceListInput) {
+    const condition = and(
+      input.search ? sql`lower(${resources.title}) like ${`%${input.search.toLowerCase()}%`}` : undefined,
+      input.category ? eq(resources.category, input.category) : undefined,
+      input.course ? eq(resources.course, input.course) : undefined,
+      input.topic ? eq(resources.topic, input.topic) : undefined,
+    );
     const { limit, offset } = getPagination(input);
     const [items, [{ total }]] = await Promise.all([
       db.select().from(resources).where(condition).orderBy(desc(resources.uploadDate)).limit(limit).offset(offset),
       db.select({ total: count() }).from(resources).where(condition),
     ]);
     return paginated(items, input.page, input.limit, total);
+  }
+
+  async downloadResource(id: number) {
+    const [resource] = await db
+      .update(resources)
+      .set({ downloadCount: sql`coalesce(${resources.downloadCount}, 0) + 1` })
+      .where(eq(resources.id, id))
+      .returning();
+    if (!resource) throw new Error('RESOURCE_NOT_FOUND');
+    return resource;
   }
 
   async getPayments(userId: number, input: ListInput) {
@@ -279,6 +298,114 @@ export class StudentService {
   async createReview(userId: number, data: CreateReviewInput) {
     const [review] = await db.insert(reviews).values({ ...data, studentId: userId, status: 'PENDING' }).returning();
     return review;
+  }
+
+  async getInvoices(userId: number, input: ListInput) {
+    const condition = and(
+      eq(invoices.studentId, userId),
+      input.status ? eq(invoices.status, input.status as 'UNPAID' | 'PAID' | 'OVERDUE' | 'CANCELLED') : undefined,
+    );
+    const { limit, offset } = getPagination(input);
+    const [items, [{ total }]] = await Promise.all([
+      db.select().from(invoices).where(condition).orderBy(desc(invoices.issueDate)).limit(limit).offset(offset),
+      db.select({ total: count() }).from(invoices).where(condition),
+    ]);
+    return paginated(items, input.page, input.limit, total);
+  }
+
+  async getInvoice(userId: number, invoiceId: number) {
+    const [invoice] = await db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.id, invoiceId), eq(invoices.studentId, userId)))
+      .limit(1);
+    if (!invoice) throw new Error('INVOICE_NOT_FOUND');
+    return invoice;
+  }
+
+  async getTickets(userId: number, input: ListInput) {
+    const condition = and(
+      eq(tickets.studentId, userId),
+      input.status ? eq(tickets.status, input.status as 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED') : undefined,
+    );
+    const { limit, offset } = getPagination(input);
+    const [items, [{ total }]] = await Promise.all([
+      db.select().from(tickets).where(condition).orderBy(desc(tickets.updatedAt)).limit(limit).offset(offset),
+      db.select({ total: count() }).from(tickets).where(condition),
+    ]);
+    return paginated(items, input.page, input.limit, total);
+  }
+
+  async getTicket(userId: number, ticketId: number) {
+    const [ticket] = await db
+      .select()
+      .from(tickets)
+      .where(and(eq(tickets.id, ticketId), eq(tickets.studentId, userId)))
+      .limit(1);
+    if (!ticket) throw new Error('TICKET_NOT_FOUND');
+    return ticket;
+  }
+
+  async createTicket(userId: number, data: CreateTicketInput) {
+    const [user] = await db.select({ name: users.name, avatar: users.avatar }).from(users).where(eq(users.id, userId)).limit(1);
+    const ticketNumber = `TICK-${Date.now().toString().slice(-6)}`;
+    const initialMessage: TicketMessage = {
+      id: randomUUID(),
+      sender: user?.name || 'Student',
+      role: data.requesterRole,
+      text: data.message,
+      timestamp: new Date().toISOString(),
+      avatar: user?.avatar || undefined,
+    };
+
+    const [ticket] = await db
+      .insert(tickets)
+      .values({
+        ticketNumber,
+        studentId: userId,
+        requesterRole: data.requesterRole,
+        subject: data.subject,
+        category: data.category,
+        priority: data.priority,
+        status: 'OPEN',
+        messages: [initialMessage],
+      })
+      .returning();
+
+    return ticket;
+  }
+
+  async addTicketMessage(userId: number, ticketId: number, data: AddTicketMessageInput) {
+    const [ticket] = await db
+      .select()
+      .from(tickets)
+      .where(and(eq(tickets.id, ticketId), eq(tickets.studentId, userId)))
+      .limit(1);
+
+    if (!ticket) throw new Error('TICKET_NOT_FOUND');
+    if (ticket.status === 'CLOSED') throw new Error('TICKET_CLOSED');
+
+    const [user] = await db.select({ name: users.name, avatar: users.avatar }).from(users).where(eq(users.id, userId)).limit(1);
+    const newMessage: TicketMessage = {
+      id: randomUUID(),
+      sender: user?.name || 'Student',
+      role: ticket.requesterRole,
+      text: data.text,
+      timestamp: new Date().toISOString(),
+      avatar: user?.avatar || undefined,
+    };
+
+    const updatedMessages = [...(ticket.messages || []), newMessage];
+    const [updatedTicket] = await db
+      .update(tickets)
+      .set({
+        messages: updatedMessages,
+        updatedAt: new Date(),
+      })
+      .where(eq(tickets.id, ticketId))
+      .returning();
+
+    return updatedTicket;
   }
 }
 
