@@ -1,8 +1,8 @@
-import { and, count, desc, eq, gt, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gt, ne, or, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db } from '../../db/index.js';
 import { assignments } from '../../db/models/assignments.js';
-import { bookingSessions } from '../../db/models/booking-sessions.js';
+import { bookingSessions, sessionStudents } from '../../db/models/booking-sessions.js';
 import { homeworkSubmissions } from '../../db/models/homework-submissions.js';
 import { invoices } from '../../db/models/invoices.js';
 import { notifications } from '../../db/models/notifications.js';
@@ -75,19 +75,75 @@ export class StudentService {
   }
 
   async updateProfile(userId: number, data: UpdateProfileInput) {
-    const [updated] = await db.update(users).set({ ...data, updatedAt: new Date() })
-      .where(eq(users.id, userId)).returning({
-        id: users.id,
-        name: users.name,
-        email: users.email,
-        phone: users.phone,
-        avatar: users.avatar,
-        specialty: users.specialty,
-        status: users.status,
-        role: users.role,
+    if (data.email) {
+      const [existingUser] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.email, data.email), ne(users.id, userId)))
+        .limit(1);
+      if (existingUser) {
+        throw new Error('EMAIL_EXISTS');
+      }
+    }
+
+    const studentPhone = data.studentPhoneNumber ?? data.studentPhone ?? data.phone;
+    const parentPhone = data.parentPhoneNumber ?? data.parentPhone;
+
+    // Update users table
+    const userUpdates: Partial<typeof users.$inferInsert> = {
+      updatedAt: new Date(),
+    };
+    if (data.name !== undefined) userUpdates.name = data.name;
+    if (data.email !== undefined) userUpdates.email = data.email;
+    if (studentPhone !== undefined) userUpdates.phone = studentPhone;
+    if (data.avatar !== undefined) userUpdates.avatar = data.avatar;
+
+    const [updatedUser] = await db
+      .update(users)
+      .set(userUpdates)
+      .where(eq(users.id, userId))
+      .returning();
+
+    if (!updatedUser) throw new Error('STUDENT_NOT_FOUND');
+
+    // Update or insert studentProfiles table
+    const profileUpdates: Partial<typeof studentProfiles.$inferInsert> = {};
+    if (data.schoolName !== undefined) profileUpdates.schoolName = data.schoolName;
+    if (data.year !== undefined) {
+      profileUpdates.year = data.year;
+      profileUpdates.academicYear = data.year;
+    }
+    if (data.board !== undefined) {
+      profileUpdates.board = data.board;
+      profileUpdates.examBoard = data.board;
+    }
+    if (studentPhone !== undefined) profileUpdates.studentPhone = studentPhone;
+    if (parentPhone !== undefined) profileUpdates.parentPhone = parentPhone;
+    if (data.parentName !== undefined) profileUpdates.parentName = data.parentName;
+    if (data.hardestTopic !== undefined) profileUpdates.hardestTopic = data.hardestTopic;
+
+    const [existingProfile] = await db
+      .select({ id: studentProfiles.id })
+      .from(studentProfiles)
+      .where(eq(studentProfiles.userId, userId))
+      .limit(1);
+
+    if (existingProfile) {
+      if (Object.keys(profileUpdates).length > 0) {
+        await db
+          .update(studentProfiles)
+          .set(profileUpdates)
+          .where(eq(studentProfiles.userId, userId));
+      }
+    } else {
+      await db.insert(studentProfiles).values({
+        userId,
+        ...profileUpdates,
+        registeredVia: 'Profile Update',
       });
-    if (!updated) throw new Error('STUDENT_NOT_FOUND');
-    return updated;
+    }
+
+    return this.getProfile(userId);
   }
 
   async getAssignments(userId: number, input: ListInput) {
@@ -146,7 +202,10 @@ export class StudentService {
 
   async getSessions(userId: number, input: ListInput) {
     const condition = and(
-      eq(bookingSessions.studentId, userId),
+      or(
+        eq(bookingSessions.studentId, userId),
+        sql`EXISTS (SELECT 1 FROM ${sessionStudents} WHERE ${sessionStudents.sessionId} = ${bookingSessions.id} AND ${sessionStudents.studentId} = ${userId})`
+      ),
       eq(bookingSessions.isArchived, false),
     );
     const { limit, offset } = getPagination(input);
@@ -196,6 +255,36 @@ export class StudentService {
         date: data.date,
         status: 'SCHEDULED',
       }).returning();
+
+      // Notify all admin users about the new session booking
+      const [student] = await transaction
+        .select({ name: users.name })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      const admins = await transaction
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.role, 'ADMIN'), eq(users.status, 'ACTIVE')));
+
+      if (admins.length > 0) {
+        const studentName = student?.name ?? 'A student';
+        const sessionDate = data.date instanceof Date
+          ? data.date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+          : String(data.date);
+        await transaction.insert(notifications).values(
+          admins.map((admin) => ({
+            userId: admin.id,
+            title: 'New Session Booking',
+            message: `${studentName} has booked a ${data.sessionFormat?.toLowerCase() ?? ''} session for ${sessionDate}.`,
+            type: 'SESSION',
+            linkTab: 'schedule',
+            read: false,
+          }))
+        );
+      }
+
       return session;
     });
   }

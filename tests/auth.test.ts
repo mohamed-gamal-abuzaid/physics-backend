@@ -52,4 +52,87 @@ describe('authentication API', () => {
     const response = await request(app).get('/health').set('Authorization', `Bearer ${token}`);
     expect(response.status).toBe(200);
   });
+
+  describe('registration validation', () => {
+    it('rejects registration when required fields are missing', async () => {
+      const response = await request(app).post('/api/auth/register').send({
+        name: 'Omar Tarek',
+        email: 'omar@example.com',
+        password: 'password123',
+      });
+      expect(response.status).toBe(400);
+      expect(response.body.errors).toBeDefined();
+    });
+
+    it('rejects registration with an invalid year option', async () => {
+      const response = await request(app).post('/api/auth/register').send({
+        name: 'Omar Tarek',
+        email: 'omar@example.com',
+        password: 'password123',
+        schoolName: 'Cairo English School',
+        year: 'Y15',
+        board: 'OL_CAMBRIDGE',
+        studentPhoneNumber: '01012345678',
+        parentPhoneNumber: '01098765432',
+      });
+      expect(response.status).toBe(400);
+      expect(response.body.errors?.year).toBeDefined();
+    });
+
+    it('rejects registration with an invalid board option', async () => {
+      const response = await request(app).post('/api/auth/register').send({
+        name: 'Omar Tarek',
+        email: 'omar@example.com',
+        password: 'password123',
+        schoolName: 'Cairo English School',
+        year: 'Y11',
+        board: 'NOT_A_VALID_BOARD',
+        studentPhoneNumber: '01012345678',
+        parentPhoneNumber: '01098765432',
+      });
+      expect(response.status).toBe(400);
+      expect(response.body.errors?.board).toBeDefined();
+    });
+
+    it('validates supported year and board options properly', async () => {
+      // Missing phone numbers
+      const response = await request(app).post('/api/auth/register').send({
+        name: 'Omar Tarek',
+        email: 'omar@example.com',
+        password: 'password123',
+        schoolName: 'Cairo English School',
+        year: 'Y12',
+        board: 'NIES',
+      });
+      expect(response.status).toBe(400);
+      expect(response.body.errors).toBeDefined();
+    });
+  });
+
+  describe('student profile update security & validation', () => {
+    it('rejects profile update without auth token', async () => {
+      const res = await request(app).patch('/api/student/profile').send({ name: 'New Name' });
+      expect(res.status).toBe(401);
+    });
+
+    it('rejects profile update with invalid year', async () => {
+      const token = generateToken({ id: 2, email: 'student@example.com', role: 'STUDENT' });
+      const res = await request(app)
+        .patch('/api/student/profile')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ year: 'INVALID_YEAR' });
+      expect(res.status).toBe(400);
+      expect(res.body.errors?.year).toBeDefined();
+    });
+
+    it('rejects profile update with invalid board', async () => {
+      const token = generateToken({ id: 2, email: 'student@example.com', role: 'STUDENT' });
+      const res = await request(app)
+        .patch('/api/student/profile')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ board: 'INVALID_BOARD' });
+      expect(res.status).toBe(400);
+      expect(res.body.errors?.board).toBeDefined();
+    });
+  });
 });

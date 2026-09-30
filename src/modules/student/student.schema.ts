@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { paginationSchema } from '../../utils/pagination.js';
+import { yearSchema, boardSchema } from '../auth/auth.schema.js';
 
 export const listSchema = paginationSchema.extend({
   search: z.string().trim().max(100).optional(),
@@ -7,9 +8,19 @@ export const listSchema = paginationSchema.extend({
 });
 
 export const updateProfileSchema = z.object({
-  name: z.string().min(2).max(50).optional(),
-  phone: z.string().max(20).nullable().optional(),
+  name: z.string().trim().min(2, 'Name must be at least 2 characters').max(50).optional(),
+  email: z.string().trim().email('Invalid email address').toLowerCase().optional(),
+  schoolName: z.string().trim().min(1, 'School name is required').max(255).optional(),
+  year: yearSchema.optional(),
+  board: boardSchema.optional(),
+  studentPhoneNumber: z.string().trim().max(20).nullable().optional(),
+  studentPhone: z.string().trim().max(20).nullable().optional(),
+  parentPhoneNumber: z.string().trim().max(20).nullable().optional(),
+  parentPhone: z.string().trim().max(20).nullable().optional(),
+  phone: z.string().trim().max(20).nullable().optional(),
   avatar: z.string().url().nullable().optional(),
+  hardestTopic: z.string().trim().max(255).nullable().optional(),
+  parentName: z.string().trim().max(100).nullable().optional(),
 });
 
 export const createSubmissionSchema = z.object({

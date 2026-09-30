@@ -114,6 +114,7 @@ export class PublicService {
         cohort: reviews.cohort,
         content: reviews.content,
         rating: reviews.rating,
+        status: reviews.status,
         createdAt: reviews.createdAt,
       })
       .from(reviews)

@@ -189,14 +189,14 @@ router.get('/sessions', authenticate, authorize('student'), controller.sessions)
 router.post('/sessions', authenticate, authorize('student'), controller.createSession);
 router.patch('/sessions/:id/reschedule', authenticate, authorize('student'), controller.rescheduleSession);
 router.patch('/sessions/:id/cancel', authenticate, authorize('student'), controller.cancelSession);
-router.get('/notifications', authenticate, authorize('student'), controller.notifications);
-router.patch('/notifications/:id/read', authenticate, authorize('student'), controller.markNotificationRead);
+router.get('/notifications', authenticate, authorize('student', 'admin'), controller.notifications);
+router.patch('/notifications/:id/read', authenticate, authorize('student', 'admin'), controller.markNotificationRead);
 router.get('/resources', authenticate, authorize('student'), controller.resources);
 router.post('/resources/:id/download', authenticate, authorize('student'), controller.downloadResource);
 router.get('/payments', authenticate, authorize('student'), controller.payments);
 router.post('/payments', authenticate, authorize('student'), controller.createPayment);
 router.get('/reviews', authenticate, authorize('student'), controller.reviews);
-router.post('/reviews', authenticate, authorize('student'), controller.createReview);
+router.post('/reviews', authenticate, authorize('student', 'admin'), controller.createReview);
 router.get('/invoices', authenticate, authorize('student'), controller.invoices);
 router.get('/invoices/:id', authenticate, authorize('student'), controller.invoice);
 router.get('/tickets', authenticate, authorize('student'), controller.tickets);

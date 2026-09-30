@@ -2,7 +2,7 @@ export { users, studentProfiles } from './models/users.js';
 export { appSettings } from './models/app-settings.js';
 export { assignments } from './models/assignments.js';
 export { auditLogs } from './models/audit-logs.js';
-export { bookingSessions } from './models/booking-sessions.js';
+export { bookingSessions, sessionStudents } from './models/booking-sessions.js';
 export { campaigns } from './models/campaigns.js';
 export { hallOfFame } from './models/hall-of-fame.js';
 export { homeworkSubmissions } from './models/homework-submissions.js';

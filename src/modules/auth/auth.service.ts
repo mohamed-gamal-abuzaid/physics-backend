@@ -1,5 +1,5 @@
 import { db } from '../../db/index.js';
-import { users } from '../../db/models/users.js';
+import { users, studentProfiles } from '../../db/models/users.js';
 import { eq } from 'drizzle-orm';
 import { OAuth2Client } from 'google-auth-library';
 import { randomBytes } from 'node:crypto';
@@ -28,14 +28,28 @@ export class AuthService {
     }
 
     const hashedPassword = await hashPassword(data.password);
+    const studentPhone = data.studentPhoneNumber || data.studentPhone || data.phone || null;
+    const parentPhone = data.parentPhoneNumber || data.parentPhone || null;
 
     const [newUser] = await db.insert(users).values({
       name: data.name,
       email: data.email,
       password: hashedPassword,
-      phone: data.phone,
+      phone: studentPhone,
       role: 'STUDENT',
     }).returning();
+
+    await db.insert(studentProfiles).values({
+      userId: newUser.id,
+      schoolName: data.schoolName,
+      year: data.year,
+      board: data.board,
+      academicYear: data.year,
+      examBoard: data.board,
+      studentPhone: studentPhone,
+      parentPhone: parentPhone,
+      registeredVia: 'Direct Registration',
+    });
 
     return this.createAuthResponse(newUser);
   }
@@ -119,7 +133,21 @@ export class AuthService {
       throw new Error('USER_NOT_FOUND');
     }
 
-    return user;
+    const [profile] = await db
+      .select()
+      .from(studentProfiles)
+      .where(eq(studentProfiles.userId, userId))
+      .limit(1);
+
+    return {
+      ...user,
+      studentProfile: profile || null,
+      schoolName: profile?.schoolName || null,
+      year: profile?.year || null,
+      board: profile?.board || null,
+      studentPhoneNumber: profile?.studentPhone || user.phone || null,
+      parentPhoneNumber: profile?.parentPhone || null,
+    };
   }
 }
 
