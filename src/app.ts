@@ -3,7 +3,6 @@ import cors from 'cors';
 import helmet from 'helmet';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger.js';
-
 import authRoutes from './modules/auth/auth.routes.js';
 import studentRoutes from './modules/student/student.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
