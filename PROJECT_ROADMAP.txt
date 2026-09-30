@@ -1,0 +1,285 @@
+PHYSICS BACKEND PROJECT ROADMAP
+================================
+
+Current state
+-------------
+- Node.js + TypeScript + Express backend.
+- PostgreSQL + Drizzle ORM configured.
+- JWT authentication implemented.
+- Google ID-token login/register implemented.
+- Student module started with profile, dashboard, assignments, submissions,
+  sessions, notifications, resources, payments, and reviews APIs.
+- Unified admin/teacher module added under the ADMIN role.
+- Seed command, Vitest setup, authentication tests, and student ownership tests
+   added.
+- Swagger documentation now covers auth, student, and admin/teacher APIs.
+- Database models exist for most of the planned platform.
+- Build currently passes with: npm run build.
+
+Recommended implementation order
+---------------------------------
+
+PHASE 1 - Stabilize the project foundation
+
+1. Confirm local prerequisites
+   - Node.js installed.
+   - PostgreSQL running.
+   - DATABASE_URL configured in .env.
+   - JWT_SECRET configured with a long random value.
+   - GOOGLE_CLIENT_ID configured if Google login is required.
+   - Run npm install.
+
+2. Separate application startup from app creation
+   - Move Express app creation into an exported app.ts.
+   - Keep app.listen() only in server.ts.
+   - This makes integration and API tests possible without opening a port.
+
+3. Add common project standards
+   - Add a consistent error response format.
+   - Add request logging with the existing pino dependency.
+   - Add a 404 handler.
+   - Add a final error-handling middleware.
+   - Validate required environment variables during startup.
+
+4. Check the repository state
+   - Commit source code, migrations, package files, and .env.example.
+   - Never commit .env, passwords, JWT secrets, or Google credentials.
+
+PHASE 2 - Finalize the database
+
+5. Review the complete data model
+   - Keep users and studentProfiles.
+   - Keep assignments and homeworkSubmissions.
+   - Keep bookingSessions.
+   - Keep notifications.
+   - Keep paymentProofs.
+   - Keep resources and reviews.
+   - Decide whether invoices and tickets are required. Their model files are
+     currently empty and should either be implemented or removed from scope.
+
+6. Make migrations reliable
+   - Run npm run db:generate after every schema change.
+   - Review generated SQL before applying it.
+   - Run npm run db:migrate against a development database.
+   - Test migration behavior with existing users and existing data.
+   - Add seed data for an admin, student, teacher, assignments, and resources.
+
+7. Improve relational rules
+   - Add indexes for frequently queried foreign keys and dates.
+   - Confirm whether teacher users need a separate role or teacher profile.
+   - Add createdAt/updatedAt fields where audit history requires them.
+   - Decide whether assignments should use studentId, assignedStudentIds, or a
+     separate assignment_students join table.
+
+PHASE 3 - Complete authentication and authorization
+
+8. Finish auth behavior
+   - Keep register restricted to STUDENT accounts.
+   - Keep admin creation restricted to a protected admin operation or seed.
+   - Keep password login unavailable for Google-only accounts unless a password
+     is explicitly created later.
+   - Normalize emails to lowercase before lookup and insert.
+   - Handle duplicate email and duplicate Google ID conflicts safely.
+   - Add password reset and change-password flows if needed.
+
+9. Harden authentication
+   - Use a required JWT_SECRET; do not use a fallback secret in production.
+   - Add token expiration handling and refresh-token strategy if long sessions
+     are required.
+   - Add rate limiting to register, login, and Google login.
+   - Avoid returning internal database or exception details to clients.
+   - Validate that inactive users cannot log in.
+
+10. Define role permissions
+   - STUDENT: own profile and own student data.
+   - TEACHER: assigned sessions, assignments, grading, and student progress.
+   - ADMIN: users, settings, payments, campaigns, audit logs, and reporting.
+   - Add reusable authorizeRoles middleware for every protected area.
+
+PHASE 4 - Complete the student module
+
+11. Verify existing student endpoints
+   - GET /api/student/dashboard
+   - GET/PATCH /api/student/profile
+   - GET /api/student/assignments
+   - GET /api/student/assignments/:id
+   - GET /api/student/submissions
+   - POST /api/student/assignments/:assignmentId/submissions
+   - GET/POST /api/student/sessions
+   - GET /api/student/notifications
+   - PATCH /api/student/notifications/:id/read
+   - GET /api/student/resources
+   - GET/POST /api/student/payments
+   - GET/POST /api/student/reviews
+
+12. Add missing student workflows
+   - Cancel or reschedule a session when policy allows it.
+   - View one submission by ID.
+   - Prevent submissions after the assignment deadline if required.
+   - Mark all notifications as read.
+   - Filter and paginate assignments, sessions, resources, and notifications.
+   - Allow students to update their student profile fields.
+   - Return clear validation errors for invalid IDs and dates.
+
+13. Secure ownership checks
+   - Every student query must filter by authenticated user ID.
+   - A student must never read another student's assignment, payment, review,
+     notification, session, or submission.
+   - Validate teacherId before creating a booking.
+   - Validate assignedHomeworkId belongs to the requesting student.
+
+PHASE 5 - Build teacher and admin modules
+
+14. Teacher module
+   - Teacher profile and availability.
+   - View assigned students.
+   - Create and update assignments.
+   - View submissions.
+   - Grade submissions and add feedback.
+   - Create, update, complete, cancel, and reschedule sessions.
+   - Add notifications for assignment and session events.
+
+15. Admin module
+   - User list, search, filtering, activation, and role management.
+   - Student profile management.
+   - Teacher management.
+   - Assignment and resource management.
+   - Booking/session management.
+   - Payment proof review and approval/rejection.
+   - App settings management.
+   - Campaign management.
+   - Audit log queries.
+
+16. Business rules
+   - Define credit packages and credit deduction behavior.
+   - Define private versus group session rules.
+   - Define payment approval effects on student credits.
+   - Define cancellation and refund rules.
+   - Define review moderation rules.
+
+PHASE 6 - API quality and documentation
+
+17. Improve API consistency
+   - Use consistent response shapes for lists, details, and errors.
+   - Add pagination parameters: page, limit, sort, and filters.
+   - Validate numeric route parameters before querying.
+   - Use HTTP status codes consistently.
+   - Add request correlation IDs for debugging.
+
+18. Complete Swagger documentation
+   - Document every student, teacher, and admin endpoint.
+   - Document authentication headers.
+   - Document validation errors and authorization errors.
+   - Add request and response examples.
+   - Keep Swagger generated from route annotations or a dedicated schema file.
+
+PHASE 7 - Testing
+
+19. Unit tests
+   - Test password hashing and comparison.
+   - Test JWT creation and verification.
+   - Test auth service register/login behavior.
+   - Test Google token success and failure paths.
+   - Test student service ownership checks.
+   - Test validation schemas.
+
+20. Integration tests
+   - Start with a test PostgreSQL database.
+   - Run migrations in the test database.
+   - Test register, login, Google login, and /auth/me.
+   - Test student profile and dashboard.
+   - Test assignment submission ownership.
+   - Test session creation.
+   - Test payment submission.
+   - Test notification read behavior.
+   - Test role authorization.
+
+21. Required negative tests
+   - Missing or invalid bearer token.
+   - STUDENT accessing admin or teacher routes.
+   - Student accessing another student's record.
+   - Duplicate email registration.
+   - Invalid Google token.
+   - Google login without GOOGLE_CLIENT_ID.
+   - Invalid request bodies.
+   - Expired JWT.
+   - Inactive account login.
+
+PHASE 8 - Security and operations
+
+22. Security checklist
+   - Add helmet and restrictive CORS configuration.
+   - Add rate limiting.
+   - Add request body size limits.
+   - Validate uploaded file URLs and file types.
+   - Store uploaded files outside the repository or in object storage.
+   - Never log passwords, tokens, or payment secrets.
+   - Run npm audit and fix applicable vulnerabilities.
+   - Rotate JWT and Google credentials if they are exposed.
+
+23. Observability
+   - Add structured request and error logs.
+   - Add health and readiness endpoints.
+   - Add database connectivity checks.
+   - Track authentication failures and important business events.
+   - Add audit records for admin actions and payment decisions.
+
+PHASE 9 - Deployment
+
+24. Containerization
+   - Create a production Dockerfile.
+   - Add a non-root runtime user.
+   - Use a production-only dependency install.
+   - Add a docker-compose development setup with PostgreSQL.
+   - Run migrations as an explicit deployment step.
+
+25. Environment configuration
+   - Configure DATABASE_URL, JWT_SECRET, GOOGLE_CLIENT_ID, PORT, CORS_ORIGIN,
+     and storage settings through deployment secrets.
+   - Keep .env.example updated.
+   - Use separate development, test, and production databases.
+
+26. CI/CD
+   - Install dependencies.
+   - Run formatting and lint checks.
+   - Run npm run build.
+   - Run database migration checks.
+   - Run unit and integration tests.
+   - Build the Docker image.
+   - Deploy only after all checks pass.
+
+27. Production readiness
+   - Add HTTPS.
+   - Configure CORS for the real frontend domain.
+   - Configure Google OAuth authorized origins and redirect settings.
+   - Add database backups and restore testing.
+   - Add monitoring and alerting.
+   - Perform a security review before public release.
+
+Suggested immediate next steps
+------------------------------
+Completed:
+- Refactor app.ts/server.ts so the app can be tested.
+- Add a database seed script and test database configuration.
+- Add automated tests for auth and student ownership.
+- Finish Swagger documentation for auth, student, and admin/teacher APIs.
+- Implement the unified admin/teacher module.
+
+Next:
+1. Run npm run db:seed against a dedicated development database.
+2. Add integration tests against DATABASE_URL_TEST.
+3. Add pagination, filtering, and remaining business rules.
+4. Add Docker and CI/CD validation.
+5. Run a complete staging test before production deployment.
+
+Definition of done
+------------------
+The project is ready for release when:
+- All planned roles and workflows have implemented APIs.
+- Every protected query enforces ownership or role permissions.
+- Migrations run successfully on a clean and existing database.
+- Unit, integration, and negative authorization tests pass.
+- Swagger documents the public API accurately.
+- Secrets are stored outside Git.
+- The application builds, starts, logs errors safely, and passes health checks.
+- Deployment and rollback procedures have been tested.

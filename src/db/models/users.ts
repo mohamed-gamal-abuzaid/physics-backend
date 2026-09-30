@@ -1,4 +1,4 @@
-import { pgTable, serial, text, varchar, timestamp, integer, decimal } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, varchar, timestamp, integer, decimal, boolean } from 'drizzle-orm/pg-core';
 import { userRoleEnum } from './enums.js';
 
 export const users = pgTable('users', {
@@ -6,7 +6,7 @@ export const users = pgTable('users', {
   name: text('name').notNull(),
   email: varchar('email', { length: 255 }).notNull().unique(),
   googleId: varchar('google_id', { length: 255 }).unique(),
-  password: text('password'), // أصبح اختياري ليدعم التسجيل عبر Google
+  password: text('password'), 
   phone: varchar('phone', { length: 20 }),
   role: userRoleEnum('role').default('STUDENT').notNull(),
   avatar: text('avatar'),
@@ -34,8 +34,18 @@ export const studentProfiles = pgTable('student_profiles', {
   schoolName: text('school_name'),
   academicYear: text('academic_year'),
   examBoard: text('exam_board'),
+  year: text('year'),
+  board: text('board'),
+  studentPhone: varchar('student_phone', { length: 20 }),
   examSession: text('exam_session'),
   hardestTopic: text('hardest_topic'),
+  meetingLink: text('meeting_link'),
+  isAccountGranted: boolean('is_account_granted').default(false),
+  generatedPassword: text('generated_password'),
+  passwordGeneratedAt: timestamp('password_generated_at'),
+  assignedTeacherId: integer('assigned_teacher_id').references(() => users.id, { onDelete: 'set null' }),
+  registeredVia: varchar('registered_via', { length: 100 }),
+  joinedDate: timestamp('joined_date').defaultNow(),
   notes: text('notes'),
 });
 

@@ -16,7 +16,10 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
     return res.status(401).json({ message: 'Unauthorized' });
   }
 
-  const token = authHeader.split(' ')[1];
+  const token = authHeader.slice('Bearer '.length).trim();
+  if (!token) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
 
   try {
     const decoded = verifyToken(token);
@@ -28,11 +31,15 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
 };
 
 
-export const authorizeRoles = (...roles: string[]) => {
+export const authorize = (...roles: string[]) => {
+  const allowedRoles = roles.map((role) => role.toUpperCase());
+
   return (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    if (!req.user || !allowedRoles.includes(req.user.role.toUpperCase())) {
       return res.status(403).json({ message: 'Forbidden' });
     }
     next();
   };
 };
+
+export const authorizeRoles = authorize;

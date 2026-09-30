@@ -1,9 +1,26 @@
 import { z } from 'zod';
+import { paginationSchema } from '../../utils/pagination.js';
+import { yearSchema, boardSchema } from '../auth/auth.schema.js';
+
+export const listSchema = paginationSchema.extend({
+  search: z.string().trim().max(100).optional(),
+  status: z.string().max(50).optional(),
+});
 
 export const updateProfileSchema = z.object({
-  name: z.string().min(2).max(50).optional(),
-  phone: z.string().max(20).nullable().optional(),
+  name: z.string().trim().min(2, 'Name must be at least 2 characters').max(50).optional(),
+  email: z.string().trim().email('Invalid email address').toLowerCase().optional(),
+  schoolName: z.string().trim().min(1, 'School name is required').max(255).optional(),
+  year: yearSchema.optional(),
+  board: boardSchema.optional(),
+  studentPhoneNumber: z.string().trim().max(20).nullable().optional(),
+  studentPhone: z.string().trim().max(20).nullable().optional(),
+  parentPhoneNumber: z.string().trim().max(20).nullable().optional(),
+  parentPhone: z.string().trim().max(20).nullable().optional(),
+  phone: z.string().trim().max(20).nullable().optional(),
   avatar: z.string().url().nullable().optional(),
+  hardestTopic: z.string().trim().max(255).nullable().optional(),
+  parentName: z.string().trim().max(100).nullable().optional(),
 });
 
 export const createSubmissionSchema = z.object({
@@ -25,6 +42,11 @@ export const createSessionSchema = z.object({
   notes: z.string().max(2000).optional(),
 });
 
+export const rescheduleSessionSchema = z.object({
+  date: z.coerce.date(),
+  time: z.string().max(50).optional(),
+});
+
 export const createPaymentSchema = z.object({
   packageName: z.string().max(255).optional(),
   sessionsCount: z.number().int().positive().optional(),
@@ -43,8 +65,33 @@ export const createReviewSchema = z.object({
   rating: z.number().int().min(1).max(5).default(5),
 });
 
+export const createTicketSchema = z.object({
+  subject: z.string().trim().min(3, 'Subject must be at least 3 characters').max(255),
+  category: z.string().trim().min(2, 'Category is required').max(100),
+  priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']).default('MEDIUM'),
+  message: z.string().trim().min(3, 'Message must be at least 3 characters').max(5000),
+  requesterRole: z.enum(['student', 'parent']).default('student'),
+});
+
+export const addTicketMessageSchema = z.object({
+  text: z.string().trim().min(1, 'Message text is required').max(5000),
+});
+
+export const resourceListSchema = paginationSchema.extend({
+  search: z.string().trim().max(100).optional(),
+  category: z.string().trim().max(100).optional(),
+  course: z.string().trim().max(100).optional(),
+  topic: z.string().trim().max(100).optional(),
+});
+
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 export type CreateSubmissionInput = z.infer<typeof createSubmissionSchema>;
 export type CreateSessionInput = z.infer<typeof createSessionSchema>;
 export type CreatePaymentInput = z.infer<typeof createPaymentSchema>;
 export type CreateReviewInput = z.infer<typeof createReviewSchema>;
+export type CreateTicketInput = z.infer<typeof createTicketSchema>;
+export type AddTicketMessageInput = z.infer<typeof addTicketMessageSchema>;
+export type ListInput = z.infer<typeof listSchema>;
+export type ResourceListInput = z.infer<typeof resourceListSchema>;
+export type RescheduleSessionInput = z.infer<typeof rescheduleSessionSchema>;
+

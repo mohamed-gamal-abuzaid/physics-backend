@@ -1,11 +1,11 @@
-import { pgTable, serial, text, timestamp, integer, boolean, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, timestamp, integer, boolean, jsonb, uniqueIndex } from 'drizzle-orm/pg-core';
 import { users } from './users.js';
 import { assignments } from './assignments.js';
 import { sessionStatusEnum, sessionFormatEnum } from './enums.js';
 
 export const bookingSessions = pgTable('booking_sessions', {
   id: serial('id').primaryKey(),
-  studentId: integer('student_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  studentId: integer('student_id').references(() => users.id, { onDelete: 'cascade' }),
   teacherId: integer('teacher_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
   assignedHomeworkId: integer('assigned_homework_id').references(() => assignments.id, { onDelete: 'set null' }),
   courseName: text('course_name'),
@@ -24,3 +24,12 @@ export const bookingSessions = pgTable('booking_sessions', {
   sessionNotes: jsonb('session_notes'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+export const sessionStudents = pgTable('session_students', {
+  id: serial('id').primaryKey(),
+  sessionId: integer('session_id').references(() => bookingSessions.id, { onDelete: 'cascade' }).notNull(),
+  studentId: integer('student_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  joinedAt: timestamp('joined_at').defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('session_students_session_student_idx').on(table.sessionId, table.studentId),
+]);
