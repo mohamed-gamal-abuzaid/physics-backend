@@ -29,6 +29,20 @@
       "when": 1790084018903,
       "tag": "0003_tired_ghost_rider",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790642768824,
+      "tag": "0004_foamy_silver_fox",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790699236562,
+      "tag": "0005_fancy_sphinx",
+      "breakpoints": true
     }
   ]
 }

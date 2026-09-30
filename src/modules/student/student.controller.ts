@@ -20,7 +20,9 @@ const userId = (req: AuthRequest) => {
 };
 
 const handleError = (res: Response, error: any) => {
+  console.error('[Student Controller Error]:', error);
   const statuses: Record<string, number> = {
+    EMAIL_EXISTS: 400,
     STUDENT_NOT_FOUND: 404,
     ASSIGNMENT_NOT_FOUND: 404,
     NOTIFICATION_NOT_FOUND: 404,

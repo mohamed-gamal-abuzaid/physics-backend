@@ -438,6 +438,7 @@ router.patch('/sessions/:id', authenticate, authorize('admin'), controller.updat
 router.post('/sessions/:id/complete', authenticate, authorize('admin'), controller.completeSession);
 router.post('/sessions/:id/approve', authenticate, authorize('admin'), controller.approveSession);
 router.post('/sessions/:id/reject', authenticate, authorize('admin'), controller.rejectSession);
+router.post('/sessions/group-link', authenticate, authorize('admin'), controller.broadcastGroupSessionLink);
 router.get('/payments', authenticate, authorize('admin'), controller.payments);
 router.patch('/payments/:id/review', authenticate, authorize('admin'), controller.reviewPayment);
 router.get('/resources', authenticate, authorize('admin'), controller.resources);
@@ -462,6 +463,14 @@ router.post('/crm/students', authenticate, authorize('admin'), controller.addStu
 router.patch('/crm/students/:id/assign', authenticate, authorize('admin'), controller.assignScholar);
 router.post('/crm/students/:id/credentials', authenticate, authorize('admin'), controller.generateCredentials);
 router.patch('/crm/students/:id/status', authenticate, authorize('admin'), controller.updateStudentStatus);
+
+router.get('/students', authenticate, authorize('admin'), controller.crmStudents);
+router.get('/students/:id', authenticate, authorize('admin'), controller.getStudent);
+router.patch('/students/:id', authenticate, authorize('admin'), controller.updateStudentAcademic);
+router.patch('/students/:id/academic', authenticate, authorize('admin'), controller.updateStudentAcademic);
+router.get('/students/:id/available-sessions', authenticate, authorize('admin'), controller.getAvailableSessionsForStudent);
+router.post('/students/:id/sessions', authenticate, authorize('admin'), controller.addStudentToSession);
+router.delete('/students/:id/sessions/:sessionId', authenticate, authorize('admin'), controller.removeStudentFromSession);
 
 router.get('/reviews', authenticate, authorize('admin'), controller.reviews);
 router.patch('/reviews/:id', authenticate, authorize('admin'), controller.moderateReview);

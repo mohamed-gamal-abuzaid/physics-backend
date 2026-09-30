@@ -3,6 +3,7 @@ import { AuthRequest } from '../../middlewares/auth.middleware.js';
 import { adminService } from './admin.service.js';
 import {
   addStudentAccountSchema,
+  addStudentToSessionSchema,
   adjustCreditsSchema,
   adminTicketMessageSchema,
   assignmentSchema,
@@ -12,6 +13,7 @@ import {
   createInvoiceSchema,
   crmListSchema,
   gradeSchema,
+  groupSessionLinkSchema,
   hallOfFameSchema,
   listSchema,
   paymentReviewSchema,
@@ -21,6 +23,7 @@ import {
   sessionStatusSchema,
   settingsSchema,
   updateInvoiceStatusSchema,
+  updateStudentAcademicSchema,
   updateStudentStatusSchema,
   updateTicketSchema,
   updateUserSchema,
@@ -29,9 +32,12 @@ import {
 const actorId = (req: AuthRequest) => req.user!.id;
 const errorStatus: Record<string, number> = {
   USER_NOT_FOUND: 404,
+  STUDENT_NOT_FOUND: 404,
   ASSIGNMENT_NOT_FOUND: 404,
   SUBMISSION_NOT_FOUND: 404,
   SESSION_NOT_FOUND: 404,
+  STUDENT_ALREADY_IN_SESSION: 409,
+  STUDENT_NOT_IN_SESSION: 404,
   PAYMENT_NOT_FOUND: 404,
   RESOURCE_NOT_FOUND: 404,
   PAYMENT_ALREADY_REVIEWED: 409,
@@ -43,6 +49,7 @@ const errorStatus: Record<string, number> = {
   EMAIL_EXISTS: 409,
 };
 const handleError = (res: Response, error: any) => {
+  console.error('[Admin Controller Error]:', error);
   const status = errorStatus[error.message] || 500;
   return res.status(status).json({ message: status === 500 ? 'An error occurred' : error.message });
 };
@@ -112,6 +119,14 @@ export const rejectSession = async (req: AuthRequest, res: Response) => {
   try {
     const reason = typeof req.body?.reason === 'string' ? req.body.reason : undefined;
     return res.json({ session: await adminService.rejectSession(parseId(req.params.id), actorId(req), reason) });
+  } catch (error) { return handleError(res, error); }
+};
+export const broadcastGroupSessionLink = async (req: AuthRequest, res: Response) => {
+  const validation = groupSessionLinkSchema.safeParse(req.body);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try {
+    const result = await adminService.broadcastGroupSessionLink(validation.data, actorId(req));
+    return res.json(result);
   } catch (error) { return handleError(res, error); }
 };
 export const payments = async (_req: AuthRequest, res: Response) => {
@@ -251,6 +266,45 @@ export const updateStudentStatus = async (req: AuthRequest, res: Response) => {
   try {
     const student = await adminService.updateStudentStatus(parseId(req.params.id), actorId(req), validation.data.status);
     return res.json({ student, message: 'Student status updated successfully' });
+  } catch (error) { return handleError(res, error); }
+};
+
+export const getStudent = async (req: AuthRequest, res: Response) => {
+  try {
+    const student = await adminService.getStudent(parseId(req.params.id));
+    return res.json({ student });
+  } catch (error) { return handleError(res, error); }
+};
+
+export const updateStudentAcademic = async (req: AuthRequest, res: Response) => {
+  const validation = updateStudentAcademicSchema.safeParse(req.body);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try {
+    const student = await adminService.updateStudentAcademic(parseId(req.params.id), actorId(req), validation.data);
+    return res.json({ student, message: 'Student academic details updated successfully' });
+  } catch (error) { return handleError(res, error); }
+};
+
+export const getAvailableSessionsForStudent = async (req: AuthRequest, res: Response) => {
+  try {
+    const sessions = await adminService.getAvailableSessionsForStudent(parseId(req.params.id));
+    return res.json({ sessions });
+  } catch (error) { return handleError(res, error); }
+};
+
+export const addStudentToSession = async (req: AuthRequest, res: Response) => {
+  const validation = addStudentToSessionSchema.safeParse(req.body);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try {
+    const result = await adminService.addStudentToSession(parseId(req.params.id), validation.data.sessionId, actorId(req));
+    return res.status(201).json(result);
+  } catch (error) { return handleError(res, error); }
+};
+
+export const removeStudentFromSession = async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await adminService.removeStudentFromSession(parseId(req.params.id), parseId(req.params.sessionId), actorId(req));
+    return res.json(result);
   } catch (error) { return handleError(res, error); }
 };
 

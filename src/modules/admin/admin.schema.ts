@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { paginationSchema } from '../../utils/pagination.js';
+import { yearSchema, boardSchema } from '../auth/auth.schema.js';
 
 export const listSchema = paginationSchema.extend({
   search: z.string().trim().max(100).optional(),
@@ -36,6 +37,13 @@ export const sessionStatusSchema = z.object({
   status: z.enum(['SCHEDULED', 'COMPLETED', 'CANCELLED', 'RESCHEDULED']),
   meetingLink: z.string().url().nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
+});
+
+export const groupSessionLinkSchema = z.object({
+  groupName: z.string().min(1).max(100),
+  meetingLink: z.string().url(),
+  topic: z.string().max(255).optional(),
+  sessionDate: z.string().optional(),
 });
 
 export const paymentReviewSchema = z.object({
@@ -138,6 +146,19 @@ export const assignScholarSchema = z.object({
 
 export const updateStudentStatusSchema = z.object({
   status: z.string().trim().min(1).max(50),
+});
+
+export const updateStudentAcademicSchema = z.object({
+  year: yearSchema.optional(),
+  board: boardSchema.optional(),
+  schoolName: z.string().trim().max(255).optional(),
+  studentPhone: z.string().trim().max(20).optional(),
+  parentPhone: z.string().trim().max(20).optional(),
+  name: z.string().trim().min(2, 'Name must be at least 2 characters').max(100).optional(),
+});
+
+export const addStudentToSessionSchema = z.object({
+  sessionId: z.coerce.number().int().positive('Session ID must be a positive integer'),
 });
 
 export const completeSessionSchema = z.object({

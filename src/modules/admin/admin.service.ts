@@ -1,4 +1,4 @@
-import { and, count, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -6,7 +6,7 @@ import { db } from '../../db/index.js';
 import { appSettings } from '../../db/models/app-settings.js';
 import { assignments } from '../../db/models/assignments.js';
 import { auditLogs } from '../../db/models/audit-logs.js';
-import { bookingSessions } from '../../db/models/booking-sessions.js';
+import { bookingSessions, sessionStudents } from '../../db/models/booking-sessions.js';
 import { campaigns } from '../../db/models/campaigns.js';
 import { hallOfFame } from '../../db/models/hall-of-fame.js';
 import { homeworkSubmissions } from '../../db/models/homework-submissions.js';
@@ -21,6 +21,7 @@ import { studentProfiles, users } from '../../db/models/users.js';
 import { hashPassword } from '../../utils/auth.js';
 import {
   addStudentAccountSchema,
+  addStudentToSessionSchema,
   adjustCreditsSchema,
   adminTicketMessageSchema,
   assignmentSchema,
@@ -39,6 +40,7 @@ import {
   sessionStatusSchema,
   settingsSchema,
   updateInvoiceStatusSchema,
+  updateStudentAcademicSchema,
   updateStudentStatusSchema,
   updateTicketSchema,
   updateUserSchema,
@@ -65,6 +67,7 @@ type CrmListInput = z.infer<typeof crmListSchema>;
 type ReviewModerationInput = z.infer<typeof reviewModerationSchema>;
 type HallOfFameInput = z.infer<typeof hallOfFameSchema>;
 type CampaignInput = z.infer<typeof campaignSchema>;
+type UpdateStudentAcademicInput = z.infer<typeof updateStudentAcademicSchema>;
 
 export class AdminService {
   async listUsers(input: z.infer<typeof listSchema>) {
@@ -137,6 +140,7 @@ export class AdminService {
         ilike(bookingSessions.courseName, `%${input.search}%`),
         ilike(users.name, `%${input.search}%`),
         ilike(users.email, `%${input.search}%`),
+        sql`EXISTS (SELECT 1 FROM ${sessionStudents} ss JOIN ${users} u2 ON ss.student_id = u2.id WHERE ss.session_id = ${bookingSessions.id} AND (u2.name ILIKE ${'%' + input.search + '%'} OR u2.email ILIKE ${'%' + input.search + '%'}))`,
       ) : undefined,
     );
     const { limit, offset } = getPagination(input);
@@ -174,7 +178,44 @@ export class AdminService {
         .leftJoin(users, eq(bookingSessions.studentId, users.id))
         .where(condition),
     ]);
-    return paginated(items, input.page, input.limit, total);
+
+    const sessionIds = items.map((i) => i.id);
+    const enrolledMap = new Map<number, { id: number; name: string; email: string }[]>();
+    if (sessionIds.length > 0) {
+      const junctionStudents = await db
+        .select({
+          sessionId: sessionStudents.sessionId,
+          id: users.id,
+          name: users.name,
+          email: users.email,
+        })
+        .from(sessionStudents)
+        .innerJoin(users, eq(sessionStudents.studentId, users.id))
+        .where(inArray(sessionStudents.sessionId, sessionIds));
+
+      for (const js of junctionStudents) {
+        if (!enrolledMap.has(js.sessionId)) {
+          enrolledMap.set(js.sessionId, []);
+        }
+        enrolledMap.get(js.sessionId)!.push({ id: js.id, name: js.name, email: js.email });
+      }
+    }
+
+    const enhancedItems = items.map((item) => {
+      const enrolled = enrolledMap.get(item.id) || [];
+      if (item.studentId && item.studentName && !enrolled.some((e) => e.id === item.studentId)) {
+        enrolled.unshift({ id: item.studentId, name: item.studentName, email: item.studentEmail || '' });
+      }
+      const studentName = enrolled.length > 0 ? enrolled.map((e) => e.name).join(', ') : item.studentName;
+      return {
+        ...item,
+        studentName,
+        enrolledStudents: enrolled,
+        enrolledCount: enrolled.length,
+      };
+    });
+
+    return paginated(enhancedItems, input.page, input.limit, total);
   }
 
   async updateSession(id: number, data: SessionStatusInput) {
@@ -274,33 +315,104 @@ export class AdminService {
         .where(eq(bookingSessions.id, id))
         .returning();
 
-      const creditField = existing.sessionFormat === 'PRIVATE' ? 'remainingPrivateCredits' : 'remainingGroupCredits';
-      const targetCol = studentProfiles[creditField];
-      await tx
-        .update(studentProfiles)
-        .set({
-          [creditField]: sql`${targetCol} + 1`,
-          totalCredits: sql`${studentProfiles.totalCredits} + 1`,
-        })
-        .where(eq(studentProfiles.userId, existing.studentId));
+      if (existing.studentId) {
+        const creditField = existing.sessionFormat === 'PRIVATE' ? 'remainingPrivateCredits' : 'remainingGroupCredits';
+        const targetCol = studentProfiles[creditField];
+        await tx
+          .update(studentProfiles)
+          .set({
+            [creditField]: sql`${targetCol} + 1`,
+            totalCredits: sql`${studentProfiles.totalCredits} + 1`,
+          })
+          .where(eq(studentProfiles.userId, existing.studentId));
 
-      await tx.insert(auditLogs).values({
-        actorId: adminId,
-        actorRole: 'ADMIN',
-        action: 'REJECT_SESSION',
-        details: { sessionId: id, studentId: existing.studentId, reason },
-      });
+        await tx.insert(auditLogs).values({
+          actorId: adminId,
+          actorRole: 'ADMIN',
+          action: 'REJECT_SESSION',
+          details: { sessionId: id, studentId: existing.studentId, reason },
+        });
 
-      await tx.insert(notifications).values({
-        userId: existing.studentId,
-        title: 'Session Booking Cancelled',
-        message: `Your session booking on ${new Date(existing.date).toLocaleDateString()} was cancelled${reason ? `: ${reason}` : '.'} Your session credit has been refunded.`,
-        type: 'academic',
-        linkTab: 'academic',
-      });
+        await tx.insert(notifications).values({
+          userId: existing.studentId,
+          title: 'Session Booking Cancelled',
+          message: `Your session booking on ${new Date(existing.date).toLocaleDateString()} was cancelled${reason ? `: ${reason}` : '.'} Your session credit has been refunded.`,
+          type: 'academic',
+          linkTab: 'academic',
+        });
+      } else {
+        await tx.insert(auditLogs).values({
+          actorId: adminId,
+          actorRole: 'ADMIN',
+          action: 'REJECT_SESSION',
+          details: { sessionId: id, reason },
+        });
+      }
 
       return session;
     });
+  }
+
+  async broadcastGroupSessionLink(
+    data: { groupName: string; meetingLink: string; topic?: string; sessionDate?: string },
+    adminId: number,
+  ) {
+    const matchingStudents = await db
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        cohort: studentProfiles.cohort,
+        enrolledCourse: studentProfiles.enrolledCourse,
+      })
+      .from(users)
+      .innerJoin(studentProfiles, eq(users.id, studentProfiles.userId))
+      .where(
+        and(
+          eq(users.role, 'STUDENT'),
+          or(
+            ilike(studentProfiles.cohort, `%${data.groupName}%`),
+            ilike(studentProfiles.enrolledCourse, `%${data.groupName}%`),
+          ),
+        ),
+      );
+
+    for (const student of matchingStudents) {
+      await db
+        .update(studentProfiles)
+        .set({
+          meetingLink: data.meetingLink,
+        })
+        .where(eq(studentProfiles.userId, student.id));
+
+      await db.insert(notifications).values({
+        userId: student.id,
+        title: `Group Session Link: ${data.topic || data.groupName}`,
+        message: `Mr. Mohammed Sayed shared the meeting link for your group (${data.groupName}): ${data.meetingLink}${data.sessionDate ? ` (Date: ${data.sessionDate})` : ''}`,
+        type: 'session',
+        linkTab: 'meeting-links',
+      });
+    }
+
+    await db.insert(auditLogs).values({
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      action: 'BROADCAST_GROUP_SESSION_LINK',
+      details: {
+        groupName: data.groupName,
+        meetingLink: data.meetingLink,
+        topic: data.topic,
+        studentCount: matchingStudents.length,
+        studentIds: matchingStudents.map((s) => s.id),
+      },
+    });
+
+    return {
+      success: true,
+      groupName: data.groupName,
+      meetingLink: data.meetingLink,
+      studentsCount: matchingStudents.length,
+    };
   }
 
   async listPayments(input: z.infer<typeof listSchema>) {
@@ -948,12 +1060,20 @@ export class AdminService {
         schoolName: studentProfiles.schoolName,
         academicYear: studentProfiles.academicYear,
         examBoard: studentProfiles.examBoard,
+        year: studentProfiles.year,
+        board: studentProfiles.board,
+        studentPhone: studentProfiles.studentPhone,
+        sessionsCount: sql<number>`(
+          SELECT count(DISTINCT _s.id)::int FROM (
+            SELECT ${bookingSessions.id} AS id FROM ${bookingSessions} WHERE ${bookingSessions.studentId} = ${users.id} AND ${bookingSessions.isArchived} = false
+            UNION
+            SELECT ${sessionStudents.sessionId} AS id FROM ${sessionStudents} WHERE ${sessionStudents.studentId} = ${users.id}
+          ) _s
+        )`,
         examSession: studentProfiles.examSession,
         hardestTopic: studentProfiles.hardestTopic,
         meetingLink: studentProfiles.meetingLink,
         isAccountGranted: studentProfiles.isAccountGranted,
-        generatedPassword: studentProfiles.generatedPassword,
-        passwordGeneratedAt: studentProfiles.passwordGeneratedAt,
         assignedTeacherId: studentProfiles.assignedTeacherId,
         assignedTeacherName: teachers.name,
         registeredVia: studentProfiles.registeredVia,
@@ -1193,6 +1313,309 @@ export class AdminService {
     };
   }
 
+  async getStudent(studentId: number) {
+    const teachers = alias(users, 'teachers');
+    const [student] = await db
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        phone: users.phone,
+        avatar: users.avatar,
+        status: users.status,
+        createdAt: users.createdAt,
+        parentName: studentProfiles.parentName,
+        parentEmail: studentProfiles.parentEmail,
+        parentPhone: studentProfiles.parentPhone,
+        gradeLevel: studentProfiles.gradeLevel,
+        cohort: studentProfiles.cohort,
+        totalCredits: studentProfiles.totalCredits,
+        remainingCredits: studentProfiles.remainingCredits,
+        remainingPrivateCredits: studentProfiles.remainingPrivateCredits,
+        remainingGroupCredits: studentProfiles.remainingGroupCredits,
+        attendanceRate: studentProfiles.attendanceRate,
+        averageScore: studentProfiles.averageScore,
+        enrolledCourse: studentProfiles.enrolledCourse,
+        schoolName: studentProfiles.schoolName,
+        academicYear: studentProfiles.academicYear,
+        examBoard: studentProfiles.examBoard,
+        year: studentProfiles.year,
+        board: studentProfiles.board,
+        studentPhone: studentProfiles.studentPhone,
+        examSession: studentProfiles.examSession,
+        hardestTopic: studentProfiles.hardestTopic,
+        meetingLink: studentProfiles.meetingLink,
+        isAccountGranted: studentProfiles.isAccountGranted,
+        assignedTeacherId: studentProfiles.assignedTeacherId,
+        assignedTeacherName: teachers.name,
+        registeredVia: studentProfiles.registeredVia,
+        joinedDate: studentProfiles.joinedDate,
+        notes: studentProfiles.notes,
+      })
+      .from(users)
+      .leftJoin(studentProfiles, eq(users.id, studentProfiles.userId))
+      .leftJoin(teachers, eq(studentProfiles.assignedTeacherId, teachers.id))
+      .where(and(eq(users.id, studentId), eq(users.role, 'STUDENT')))
+      .limit(1);
+
+    if (!student) {
+      throw new Error('STUDENT_NOT_FOUND');
+    }
+
+    const sessions = await db
+      .select({
+        id: bookingSessions.id,
+        courseName: bookingSessions.courseName,
+        topic: bookingSessions.topic,
+        sessionFormat: bookingSessions.sessionFormat,
+        date: bookingSessions.date,
+        time: bookingSessions.time,
+        durationMinutes: bookingSessions.durationMinutes,
+        location: bookingSessions.location,
+        status: bookingSessions.status,
+        meetingLink: bookingSessions.meetingLink,
+        notes: bookingSessions.notes,
+        createdAt: bookingSessions.createdAt,
+      })
+      .from(bookingSessions)
+      .where(
+        and(
+          eq(bookingSessions.isArchived, false),
+          or(
+            eq(bookingSessions.studentId, studentId),
+            sql`EXISTS (SELECT 1 FROM ${sessionStudents} WHERE ${sessionStudents.sessionId} = ${bookingSessions.id} AND ${sessionStudents.studentId} = ${studentId})`
+          )
+        )
+      )
+      .orderBy(desc(bookingSessions.date));
+
+    return {
+      ...student,
+      sessions,
+      sessionsCount: sessions.length,
+    };
+  }
+
+  async updateStudentAcademic(studentId: number, adminId: number, data: UpdateStudentAcademicInput) {
+    const [student] = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.id, studentId), eq(users.role, 'STUDENT')))
+      .limit(1);
+
+    if (!student) throw new Error('STUDENT_NOT_FOUND');
+
+    let [profile] = await db
+      .select()
+      .from(studentProfiles)
+      .where(eq(studentProfiles.userId, studentId))
+      .limit(1);
+
+    if (!profile) {
+      [profile] = await db.insert(studentProfiles).values({ userId: studentId }).returning();
+    }
+
+    if (data.name && data.name !== student.name) {
+      await db.update(users).set({ name: data.name, updatedAt: new Date() }).where(eq(users.id, studentId));
+    }
+
+    const [updatedProfile] = await db
+      .update(studentProfiles)
+      .set({
+        year: data.year !== undefined ? data.year : profile.year,
+        board: data.board !== undefined ? data.board : profile.board,
+        academicYear: data.year !== undefined ? data.year : profile.academicYear,
+        examBoard: data.board !== undefined ? data.board : profile.examBoard,
+        schoolName: data.schoolName !== undefined ? data.schoolName : profile.schoolName,
+        studentPhone: data.studentPhone !== undefined ? data.studentPhone : profile.studentPhone,
+        parentPhone: data.parentPhone !== undefined ? data.parentPhone : profile.parentPhone,
+      })
+      .where(eq(studentProfiles.userId, studentId))
+      .returning();
+
+    await this.logAudit(adminId, 'UPDATE_STUDENT_ACADEMIC', {
+      studentId,
+      year: data.year,
+      board: data.board,
+      schoolName: data.schoolName,
+    });
+
+    const { id: _profileId, ...profileFields } = updatedProfile;
+    return {
+      id: student.id,
+      name: data.name || student.name,
+      email: student.email,
+      phone: student.phone,
+      ...profileFields,
+    };
+  }
+
+  async getAvailableSessionsForStudent(studentId: number) {
+    const [student] = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.id, studentId), eq(users.role, 'STUDENT')))
+      .limit(1);
+
+    if (!student) throw new Error('STUDENT_NOT_FOUND');
+
+    const teachers = alias(users, 'teachers');
+
+    // Return non-archived sessions that the student is NOT currently assigned to
+    const available = await db
+      .select({
+        id: bookingSessions.id,
+        courseName: bookingSessions.courseName,
+        topic: bookingSessions.topic,
+        sessionFormat: bookingSessions.sessionFormat,
+        date: bookingSessions.date,
+        time: bookingSessions.time,
+        durationMinutes: bookingSessions.durationMinutes,
+        location: bookingSessions.location,
+        status: bookingSessions.status,
+        meetingLink: bookingSessions.meetingLink,
+        teacherId: bookingSessions.teacherId,
+        teacherName: teachers.name,
+      })
+      .from(bookingSessions)
+      .leftJoin(teachers, eq(bookingSessions.teacherId, teachers.id))
+      .where(
+        and(
+          eq(bookingSessions.isArchived, false),
+          sql`NOT (${bookingSessions.studentId} = ${studentId} OR EXISTS (SELECT 1 FROM ${sessionStudents} WHERE ${sessionStudents.sessionId} = ${bookingSessions.id} AND ${sessionStudents.studentId} = ${studentId}))`
+        )
+      )
+      .orderBy(desc(bookingSessions.date));
+
+    return available;
+  }
+
+  async addStudentToSession(studentId: number, sessionId: number, adminId: number) {
+    const [student] = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.id, studentId), eq(users.role, 'STUDENT')))
+      .limit(1);
+
+    if (!student) throw new Error('STUDENT_NOT_FOUND');
+
+    const [session] = await db
+      .select()
+      .from(bookingSessions)
+      .where(eq(bookingSessions.id, sessionId))
+      .limit(1);
+
+    if (!session) throw new Error('SESSION_NOT_FOUND');
+
+    // Check for duplicate assignment
+    if (session.studentId === studentId) {
+      throw new Error('STUDENT_ALREADY_IN_SESSION');
+    }
+
+    const [alreadyInJunction] = await db
+      .select()
+      .from(sessionStudents)
+      .where(
+        and(
+          eq(sessionStudents.sessionId, sessionId),
+          eq(sessionStudents.studentId, studentId)
+        )
+      )
+      .limit(1);
+
+    if (alreadyInJunction) {
+      throw new Error('STUDENT_ALREADY_IN_SESSION');
+    }
+
+    await db.insert(sessionStudents).values({
+      sessionId,
+      studentId,
+    });
+
+    await this.logAudit(adminId, 'ADD_STUDENT_TO_SESSION', {
+      studentId,
+      sessionId,
+      sessionTopic: session.topic,
+    });
+
+    return {
+      success: true,
+      message: 'Student added to session successfully',
+      studentId,
+      sessionId,
+    };
+  }
+
+  async removeStudentFromSession(studentId: number, sessionId: number, adminId: number) {
+    const [student] = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.id, studentId), eq(users.role, 'STUDENT')))
+      .limit(1);
+
+    if (!student) throw new Error('STUDENT_NOT_FOUND');
+
+    const [session] = await db
+      .select()
+      .from(bookingSessions)
+      .where(eq(bookingSessions.id, sessionId))
+      .limit(1);
+
+    if (!session) throw new Error('SESSION_NOT_FOUND');
+
+    let removed = false;
+
+    // Check if in sessionStudents junction
+    const [junctionRecord] = await db
+      .select()
+      .from(sessionStudents)
+      .where(
+        and(
+          eq(sessionStudents.sessionId, sessionId),
+          eq(sessionStudents.studentId, studentId)
+        )
+      )
+      .limit(1);
+
+    if (junctionRecord) {
+      await db
+        .delete(sessionStudents)
+        .where(
+          and(
+            eq(sessionStudents.sessionId, sessionId),
+            eq(sessionStudents.studentId, studentId)
+          )
+        );
+      removed = true;
+    }
+
+    // Also check if they are the direct bookingSessions.studentId
+    if (session.studentId === studentId) {
+      await db
+        .update(bookingSessions)
+        .set({ studentId: null })
+        .where(eq(bookingSessions.id, sessionId));
+      removed = true;
+    }
+
+    if (!removed) {
+      throw new Error('STUDENT_NOT_IN_SESSION');
+    }
+
+    await this.logAudit(adminId, 'REMOVE_STUDENT_FROM_SESSION', {
+      studentId,
+      sessionId,
+      sessionTopic: session.topic,
+    });
+
+    return {
+      success: true,
+      message: 'Student removed from session successfully',
+      studentId,
+      sessionId,
+    };
+  }
+
   async updateStudentStatus(studentId: number, adminId: number, status: string) {
     const [student] = await db.update(users).set({ status, updatedAt: new Date() })
       .where(eq(users.id, studentId))
@@ -1208,6 +1631,15 @@ export class AdminService {
     });
 
     return student;
+  }
+
+  private async logAudit(actorId: number, action: string, details: Record<string, unknown>) {
+    await db.insert(auditLogs).values({
+      actorId,
+      actorRole: 'ADMIN',
+      action,
+      details,
+    });
   }
 }
 
