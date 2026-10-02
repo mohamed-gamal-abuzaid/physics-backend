@@ -68,6 +68,7 @@ export const resourceSchema = z.object({
 
 export const settingsSchema = z.object({
   curriculaOptions: z.unknown().optional(),
+  stagesOptions: z.unknown().optional(),
   examSessionOptions: z.unknown().optional(),
   introVideoUrl: z.string().url().nullable().optional(),
   sessionPricing: z.unknown().optional(),

@@ -15,11 +15,19 @@ export class PublicService {
       if (settings) {
         return {
           introVideoUrl: settings.introVideoUrl,
+          stagesOptions: settings.stagesOptions ?? [
+            { id: 'y10', name: 'Year 10 (IGCSE Foundations)', code: 'Y10', description: 'Core and introductory physics principles' },
+            { id: 'y11', name: 'Year 11 (IGCSE / O-Level)', code: 'Y11', description: 'Complete IGCSE syllabus and past paper training' },
+            { id: 'y12', name: 'Year 12 (AS-Level)', code: 'Y12', description: 'Advanced Subsidiary physics concepts' },
+            { id: 'y13', name: 'Year 13 (A2-Level)', code: 'Y13', description: 'Advanced Level & university entrance mastery' },
+          ],
           curriculaOptions: settings.curriculaOptions ?? [
-            'Cambridge IGCSE',
-            'Edexcel International A-Level',
-            'Oxford AQA',
-            'AP Physics C',
+            { id: 'cambridge-0625', name: 'Cambridge IGCSE Physics (0625)', board: 'Cambridge', stage: 'Year 10 / Year 11', code: '0625' },
+            { id: 'cambridge-9702-as', name: 'Cambridge AS-Level Physics (9702)', board: 'Cambridge', stage: 'Year 12', code: '9702 AS' },
+            { id: 'cambridge-9702-a2', name: 'Cambridge A2-Level Physics (9702)', board: 'Cambridge', stage: 'Year 13', code: '9702 A2' },
+            { id: 'edexcel-4ph1', name: 'Edexcel International IGCSE Physics (4PH1)', board: 'Edexcel', stage: 'Year 10 / Year 11', code: '4PH1' },
+            { id: 'edexcel-wph11-12', name: 'Edexcel International A-Level Physics (WPH11/12)', board: 'Edexcel', stage: 'Year 12 / Year 13', code: 'IAL Physics' },
+            { id: 'oxford-9630', name: 'Oxford AQA International A-Level Physics (9630)', board: 'Oxford AQA', stage: 'Year 12 / Year 13', code: '9630' },
           ],
           examSessionOptions: settings.examSessionOptions ?? [
             'May/June 2025',
@@ -27,9 +35,9 @@ export class PublicService {
             'May/June 2026',
           ],
           sessionPricing: settings.sessionPricing ?? {
-            oneToOneRate: 450,
-            groupRate7Plus: 200,
-            groupRateUnder7: 280,
+            oneToOneRate: 600,
+            groupRate7Plus: 300,
+            groupRateUnder7: 400,
             currency: 'EGP',
           },
         };
@@ -40,17 +48,25 @@ export class PublicService {
 
     return {
       introVideoUrl: null,
+      stagesOptions: [
+        { id: 'y10', name: 'Year 10 (IGCSE Foundations)', code: 'Y10', description: 'Core and introductory physics principles' },
+        { id: 'y11', name: 'Year 11 (IGCSE / O-Level)', code: 'Y11', description: 'Complete IGCSE syllabus and past paper training' },
+        { id: 'y12', name: 'Year 12 (AS-Level)', code: 'Y12', description: 'Advanced Subsidiary physics concepts' },
+        { id: 'y13', name: 'Year 13 (A2-Level)', code: 'Y13', description: 'Advanced Level & university entrance mastery' },
+      ],
       curriculaOptions: [
-        'Cambridge IGCSE',
-        'Edexcel International A-Level',
-        'Oxford AQA',
-        'AP Physics C',
+        { id: 'cambridge-0625', name: 'Cambridge IGCSE Physics (0625)', board: 'Cambridge', stage: 'Year 10 / Year 11', code: '0625' },
+        { id: 'cambridge-9702-as', name: 'Cambridge AS-Level Physics (9702)', board: 'Cambridge', stage: 'Year 12', code: '9702 AS' },
+        { id: 'cambridge-9702-a2', name: 'Cambridge A2-Level Physics (9702)', board: 'Cambridge', stage: 'Year 13', code: '9702 A2' },
+        { id: 'edexcel-4ph1', name: 'Edexcel International IGCSE Physics (4PH1)', board: 'Edexcel', stage: 'Year 10 / Year 11', code: '4PH1' },
+        { id: 'edexcel-wph11-12', name: 'Edexcel International A-Level Physics (WPH11/12)', board: 'Edexcel', stage: 'Year 12 / Year 13', code: 'IAL Physics' },
+        { id: 'oxford-9630', name: 'Oxford AQA International A-Level Physics (9630)', board: 'Oxford AQA', stage: 'Year 12 / Year 13', code: '9630' },
       ],
       examSessionOptions: ['May/June 2025', 'Oct/Nov 2025', 'May/June 2026'],
       sessionPricing: {
-        oneToOneRate: 450,
-        groupRate7Plus: 200,
-        groupRateUnder7: 280,
+        oneToOneRate: 600,
+        groupRate7Plus: 300,
+        groupRateUnder7: 400,
         currency: 'EGP',
       },
     };

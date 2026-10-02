@@ -4,6 +4,7 @@ export const appSettings = pgTable('app_settings', {
   id: serial('id').primaryKey(),
   curriculaOptions: jsonb('curricula_options'),
   examSessionOptions: jsonb('exam_session_options'),
+  stagesOptions: jsonb('stages_options'),
   introVideoUrl: text('intro_video_url'),
   sessionPricing: jsonb('session_pricing'),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
