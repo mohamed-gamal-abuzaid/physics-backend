@@ -43,6 +43,13 @@
       "when": 1790699236562,
       "tag": "0005_fancy_sphinx",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790985572202,
+      "tag": "0007_faithful_justice",
+      "breakpoints": true
     }
   ]
 }
