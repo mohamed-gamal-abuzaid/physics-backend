@@ -216,22 +216,204 @@ export class StudentService {
     return paginated(items, input.page, input.limit, total);
   }
 
-  async createSession(userId: number, data: CreateSessionInput) {
-    if (data.date <= new Date()) throw new Error('SESSION_DATE_INVALID');
+  async getAvailableSlots(userId?: number) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-    const [teacher] = await db.select({ id: users.id }).from(users).where(and(
-      eq(users.id, data.teacherId),
-      eq(users.role, 'ADMIN'),
-      eq(users.status, 'ACTIVE'),
-    )).limit(1);
-    if (!teacher) throw new Error('TEACHER_NOT_FOUND');
+    // Fetch active upcoming group sessions
+    const upcomingGroups = await db
+      .select({
+        id: bookingSessions.id,
+        courseName: bookingSessions.courseName,
+        topic: bookingSessions.topic,
+        sessionFormat: bookingSessions.sessionFormat,
+        date: bookingSessions.date,
+        time: bookingSessions.time,
+        durationMinutes: bookingSessions.durationMinutes,
+        location: bookingSessions.location,
+        maxStudents: bookingSessions.maxStudents,
+        meetingLink: bookingSessions.meetingLink,
+        notes: bookingSessions.notes,
+        teacherId: bookingSessions.teacherId,
+      })
+      .from(bookingSessions)
+      .where(
+        and(
+          eq(bookingSessions.sessionFormat, 'GROUP'),
+          eq(bookingSessions.isArchived, false),
+          ne(bookingSessions.status, 'CANCELLED'),
+          sql`${bookingSessions.date} >= ${today}`,
+        )
+      )
+      .orderBy(bookingSessions.date);
+
+    const groupList = [];
+    for (const group of upcomingGroups) {
+      const [countRes] = await db
+        .select({ total: count() })
+        .from(sessionStudents)
+        .where(eq(sessionStudents.sessionId, group.id));
+      const enrolledCount = countRes?.total ?? 0;
+      const maxLimit = group.maxStudents ?? 10;
+
+      let isEnrolled = false;
+      if (userId) {
+        const [joined] = await db
+          .select()
+          .from(sessionStudents)
+          .where(and(eq(sessionStudents.sessionId, group.id), eq(sessionStudents.studentId, userId)))
+          .limit(1);
+        isEnrolled = Boolean(joined);
+      }
+
+      const isFull = enrolledCount >= maxLimit;
+      groupList.push({
+        ...group,
+        enrolledCount,
+        maxStudents: maxLimit,
+        remainingSpots: Math.max(0, maxLimit - enrolledCount),
+        isFull,
+        isEnrolled,
+      });
+    }
+
+    // Also get all booked times for instructor to prevent private slot collisions
+    const bookedSlots = await db
+      .select({
+        id: bookingSessions.id,
+        date: bookingSessions.date,
+        time: bookingSessions.time,
+        sessionFormat: bookingSessions.sessionFormat,
+      })
+      .from(bookingSessions)
+      .where(
+        and(
+          eq(bookingSessions.isArchived, false),
+          ne(bookingSessions.status, 'CANCELLED'),
+          sql`${bookingSessions.date} >= ${today}`,
+        )
+      );
+
+    return {
+      // Filter out full groups so students can only choose groups with available capacity
+      availableGroups: groupList.filter((g) => !g.isFull),
+      allGroups: groupList,
+      bookedSlots,
+    };
+  }
+
+  async createSession(userId: number, data: CreateSessionInput) {
+    // Case 1: Joining an existing group session
+    if (data.existingSessionId) {
+      const [existingGroup] = await db
+        .select()
+        .from(bookingSessions)
+        .where(eq(bookingSessions.id, data.existingSessionId))
+        .limit(1);
+
+      if (!existingGroup) throw new Error('SESSION_NOT_FOUND');
+      if (existingGroup.sessionFormat !== 'GROUP') throw new Error('NOT_A_GROUP_SESSION');
+
+      // Check if student already enrolled
+      const [alreadyEnrolled] = await db
+        .select()
+        .from(sessionStudents)
+        .where(and(eq(sessionStudents.sessionId, existingGroup.id), eq(sessionStudents.studentId, userId)))
+        .limit(1);
+      if (alreadyEnrolled) throw new Error('STUDENT_ALREADY_IN_SESSION');
+
+      // Capacity check: if group reached student limit, block booking
+      const [currentEnrolled] = await db
+        .select({ total: count() })
+        .from(sessionStudents)
+        .where(eq(sessionStudents.sessionId, existingGroup.id));
+      const maxLimit = existingGroup.maxStudents ?? (existingGroup.sessionNotes as any)?.maxStudents ?? 10;
+      if ((currentEnrolled?.total ?? 0) >= maxLimit) {
+        throw new Error('GROUP_CAPACITY_REACHED: This group session has reached its maximum student limit.');
+      }
+
+      // Deduct 1 group credit
+      const [profile] = await db.select().from(studentProfiles).where(eq(studentProfiles.userId, userId)).limit(1);
+      const groupCredits = profile?.remainingGroupCredits ?? 0;
+      const creditField = groupCredits > 0 ? 'remainingGroupCredits' : 'remainingCredits';
+      const availableCredits = groupCredits > 0 ? groupCredits : (profile?.remainingCredits ?? 0);
+      if (availableCredits < 1) throw new Error('INSUFFICIENT_CREDITS');
+
+      return db.transaction(async (tx) => {
+        const creditCol = studentProfiles[creditField];
+        await tx.update(studentProfiles)
+          .set({ [creditField]: sql`${creditCol} - 1` })
+          .where(and(eq(studentProfiles.userId, userId), gt(creditCol, 0)));
+
+        await tx.insert(sessionStudents).values({
+          sessionId: existingGroup.id,
+          studentId: userId,
+        });
+
+        const [student] = await tx.select({ name: users.name }).from(users).where(eq(users.id, userId)).limit(1);
+        const admins = await tx.select({ id: users.id }).from(users).where(and(eq(users.role, 'ADMIN'), eq(users.status, 'ACTIVE')));
+
+        if (admins.length > 0) {
+          await tx.insert(notifications).values(
+            admins.map((admin) => ({
+              userId: admin.id,
+              title: 'Student Joined Group Masterclass',
+              message: `${student?.name ?? 'A student'} joined "${existingGroup.topic}".`,
+              type: 'SESSION',
+              linkTab: 'schedule',
+              read: false,
+            }))
+          );
+        }
+
+        return existingGroup;
+      });
+    }
+
+    // Case 2: Booking a private (or new) session
+    const sessionDate = data.date ? new Date(data.date) : new Date();
+    if (sessionDate <= new Date()) throw new Error('SESSION_DATE_INVALID');
+
+    let teacherId = data.teacherId;
+    if (!teacherId) {
+      const [defaultAdmin] = await db.select({ id: users.id }).from(users).where(and(eq(users.role, 'ADMIN'), eq(users.status, 'ACTIVE'))).limit(1);
+      if (!defaultAdmin) throw new Error('TEACHER_NOT_FOUND');
+      teacherId = defaultAdmin.id;
+    } else {
+      const [teacher] = await db.select({ id: users.id }).from(users).where(and(eq(users.id, teacherId), eq(users.role, 'ADMIN'), eq(users.status, 'ACTIVE'))).limit(1);
+      if (!teacher) throw new Error('TEACHER_NOT_FOUND');
+    }
+
+    // Time conflict prevention: check if instructor has any active session at this date and time
+    if (data.time) {
+      const conflict = await db
+        .select({
+          id: bookingSessions.id,
+          topic: bookingSessions.topic,
+          sessionFormat: bookingSessions.sessionFormat,
+        })
+        .from(bookingSessions)
+        .where(
+          and(
+            eq(bookingSessions.teacherId, teacherId),
+            eq(bookingSessions.isArchived, false),
+            ne(bookingSessions.status, 'CANCELLED'),
+            sql`DATE(${bookingSessions.date}) = DATE(${sessionDate})`,
+            eq(bookingSessions.time, data.time),
+          )
+        )
+        .limit(1);
+
+      if (conflict.length > 0) {
+        throw new Error(`TIME_CONFLICT: The instructor is unavailable at this date and time due to an existing ${conflict[0].sessionFormat} session ("${conflict[0].topic}"). Please choose another slot.`);
+      }
+    }
 
     if (data.assignedHomeworkId) {
       await this.getAssignment(userId, data.assignedHomeworkId);
     }
 
-    const [profile] = await db.select().from(studentProfiles)
-      .where(eq(studentProfiles.userId, userId)).limit(1);
+    const [profile] = await db.select().from(studentProfiles).where(eq(studentProfiles.userId, userId)).limit(1);
     const specificCredits = data.sessionFormat === 'PRIVATE'
       ? (profile?.remainingPrivateCredits ?? 0)
       : (profile?.remainingGroupCredits ?? 0);
@@ -250,10 +432,18 @@ export class StudentService {
       if (!updatedProfile) throw new Error('INSUFFICIENT_CREDITS');
 
       const [session] = await transaction.insert(bookingSessions).values({
-        ...data,
+        courseName: data.courseName,
+        topic: data.topic,
+        sessionFormat: data.sessionFormat,
+        date: sessionDate,
+        time: data.time,
+        durationMinutes: data.durationMinutes || 60,
+        location: data.location,
+        notes: data.notes,
+        teacherId,
         studentId: userId,
-        date: data.date,
         status: 'SCHEDULED',
+        maxStudents: data.sessionFormat === 'PRIVATE' ? 1 : 10,
       }).returning();
 
       // Notify all admin users about the new session booking
@@ -270,14 +460,12 @@ export class StudentService {
 
       if (admins.length > 0) {
         const studentName = student?.name ?? 'A student';
-        const sessionDate = data.date instanceof Date
-          ? data.date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-          : String(data.date);
+        const formattedDate = sessionDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
         await transaction.insert(notifications).values(
           admins.map((admin) => ({
             userId: admin.id,
             title: 'New Session Booking',
-            message: `${studentName} has booked a ${data.sessionFormat?.toLowerCase() ?? ''} session for ${sessionDate}.`,
+            message: `${studentName} has booked a ${data.sessionFormat?.toLowerCase() ?? ''} session for ${formattedDate} (${data.time ?? ''}).`,
             type: 'SESSION',
             linkTab: 'schedule',
             read: false,

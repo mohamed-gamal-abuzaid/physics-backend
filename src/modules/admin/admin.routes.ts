@@ -434,11 +434,13 @@ router.delete('/assignments/:id', authenticate, authorize('admin'), controller.d
 router.get('/submissions', authenticate, authorize('admin'), controller.submissions);
 router.patch('/submissions/:id/grade', authenticate, authorize('admin'), controller.gradeSubmission);
 router.get('/sessions', authenticate, authorize('admin'), controller.sessions);
+router.post('/sessions', authenticate, authorize('admin'), controller.createSession);
 router.patch('/sessions/:id', authenticate, authorize('admin'), controller.updateSession);
 router.post('/sessions/:id/complete', authenticate, authorize('admin'), controller.completeSession);
 router.post('/sessions/:id/approve', authenticate, authorize('admin'), controller.approveSession);
 router.post('/sessions/:id/reject', authenticate, authorize('admin'), controller.rejectSession);
 router.post('/sessions/group-link', authenticate, authorize('admin'), controller.broadcastGroupSessionLink);
+router.post('/notifications/broadcast', authenticate, authorize('admin'), controller.broadcastNotification);
 router.get('/payments', authenticate, authorize('admin'), controller.payments);
 router.patch('/payments/:id/review', authenticate, authorize('admin'), controller.reviewPayment);
 router.get('/resources', authenticate, authorize('admin'), controller.resources);

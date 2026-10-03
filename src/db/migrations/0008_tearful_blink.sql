@@ -1,0 +1,1 @@
+ALTER TABLE "booking_sessions" ADD COLUMN "max_students" integer DEFAULT 10;

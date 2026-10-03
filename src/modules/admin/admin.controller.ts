@@ -5,9 +5,11 @@ import {
   addStudentAccountSchema,
   addStudentToSessionSchema,
   adjustCreditsSchema,
+  adminCreateSessionSchema,
   adminTicketMessageSchema,
   assignmentSchema,
   assignScholarSchema,
+  broadcastNotificationSchema,
   campaignSchema,
   completeSessionSchema,
   createInvoiceSchema,
@@ -38,6 +40,7 @@ const errorStatus: Record<string, number> = {
   SESSION_NOT_FOUND: 404,
   STUDENT_ALREADY_IN_SESSION: 409,
   STUDENT_NOT_IN_SESSION: 404,
+  TIME_CONFLICT: 409,
   PAYMENT_NOT_FOUND: 404,
   RESOURCE_NOT_FOUND: 404,
   PAYMENT_ALREADY_REVIEWED: 409,
@@ -99,6 +102,29 @@ export const sessions = async (req: AuthRequest, res: Response) => {
   const validation = listSchema.safeParse(req.query);
   if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
   try { return res.json({ sessions: await adminService.listSessions(validation.data) }); } catch (error) { return handleError(res, error); }
+};
+export const createSession = async (req: AuthRequest, res: Response) => {
+  const validation = adminCreateSessionSchema.safeParse(req.body);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try {
+    const session = await adminService.createSession(actorId(req), validation.data);
+    return res.status(201).json({ session });
+  } catch (error: any) {
+    if (error.message?.startsWith('TIME_CONFLICT')) {
+      return res.status(409).json({ message: error.message });
+    }
+    return handleError(res, error);
+  }
+};
+export const broadcastNotification = async (req: AuthRequest, res: Response) => {
+  const validation = broadcastNotificationSchema.safeParse(req.body);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try {
+    const result = await adminService.broadcastNotification(actorId(req), validation.data);
+    return res.json(result);
+  } catch (error) {
+    return handleError(res, error);
+  }
 };
 export const updateSession = async (req: AuthRequest, res: Response) => {
   const validation = sessionStatusSchema.safeParse(req.body);

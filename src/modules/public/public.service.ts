@@ -8,11 +8,67 @@ import { studentProfiles, users } from '../../db/models/users.js';
 import { hashPassword } from '../../utils/auth.js';
 import { BookSessionInquiryInput, TrialRegistrationInput } from './public.schema.js';
 
+const DEFAULT_LANDING_PLANS = [
+  {
+    id: 'plan-private-1',
+    title: 'Private 1-to-1 Intensive',
+    price: 600,
+    format: '1-to-1',
+    sessionsCount: 4,
+    currency: 'EGP',
+    groupNumber: 'N/A',
+    maxStudents: 1,
+    description: 'Fully personalised sessions tailored to your exact curriculum, exam board, and pace.',
+    features: ['100% customised pacing', 'Direct 1-on-1 feedback every session', 'High-definition session recordings'],
+    highlight: false,
+    badge: 'Individual Mentorship',
+  },
+  {
+    id: 'plan-group-standard',
+    title: 'Group Masterclass (Cohort Alpha)',
+    price: 300,
+    format: 'group',
+    sessionsCount: 4,
+    currency: 'EGP',
+    groupNumber: 'Group 1',
+    maxStudents: 12,
+    description: 'Collaborative learning in rigorous cohorts — unbeatable value with problem sets.',
+    features: ['Peer discussion & shared problem sets', 'Formula sheets & lecture notes', 'Weekly live Q&A roundups'],
+    highlight: true,
+    badge: 'Most Popular',
+  },
+  {
+    id: 'plan-group-small',
+    title: 'Small Group Cohort (<7)',
+    price: 400,
+    format: 'group',
+    sessionsCount: 4,
+    currency: 'EGP',
+    groupNumber: 'Group 2',
+    maxStudents: 6,
+    description: 'Intimate group sessions combining deep personalization with energetic team dynamics.',
+    features: ['High interactive engagement per student', 'Flexible scheduling windows', 'Shared notes & assignment hub'],
+    highlight: false,
+    badge: 'Limited Seats',
+  },
+];
+
 export class PublicService {
   async getConfig() {
     try {
       const [settings] = await db.select().from(appSettings).limit(1);
       if (settings) {
+        const storedPricing: any = settings.sessionPricing || {};
+        const sessionPricing = {
+          oneToOneRate: storedPricing.oneToOneRate ?? 600,
+          groupRate7Plus: storedPricing.groupRate7Plus ?? 300,
+          groupRateUnder7: storedPricing.groupRateUnder7 ?? 400,
+          currency: storedPricing.currency ?? 'EGP',
+          plans: Array.isArray(storedPricing.plans) && storedPricing.plans.length > 0
+            ? storedPricing.plans
+            : DEFAULT_LANDING_PLANS,
+        };
+
         return {
           introVideoUrl: settings.introVideoUrl,
           stagesOptions: settings.stagesOptions ?? [
@@ -34,12 +90,7 @@ export class PublicService {
             'Oct/Nov 2025',
             'May/June 2026',
           ],
-          sessionPricing: settings.sessionPricing ?? {
-            oneToOneRate: 600,
-            groupRate7Plus: 300,
-            groupRateUnder7: 400,
-            currency: 'EGP',
-          },
+          sessionPricing,
         };
       }
     } catch {
@@ -68,6 +119,7 @@ export class PublicService {
         groupRate7Plus: 300,
         groupRateUnder7: 400,
         currency: 'EGP',
+        plans: DEFAULT_LANDING_PLANS,
       },
     };
   }

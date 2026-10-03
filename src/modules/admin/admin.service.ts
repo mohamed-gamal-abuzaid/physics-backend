@@ -1,4 +1,4 @@
-import { and, count, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, inArray, ne, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -23,9 +23,11 @@ import {
   addStudentAccountSchema,
   addStudentToSessionSchema,
   adjustCreditsSchema,
+  adminCreateSessionSchema,
   adminTicketMessageSchema,
   assignmentSchema,
   assignScholarSchema,
+  broadcastNotificationSchema,
   campaignSchema,
   completeSessionSchema,
   createInvoiceSchema,
@@ -68,6 +70,8 @@ type ReviewModerationInput = z.infer<typeof reviewModerationSchema>;
 type HallOfFameInput = z.infer<typeof hallOfFameSchema>;
 type CampaignInput = z.infer<typeof campaignSchema>;
 type UpdateStudentAcademicInput = z.infer<typeof updateStudentAcademicSchema>;
+type BroadcastNotificationInput = z.infer<typeof broadcastNotificationSchema>;
+type AdminCreateSessionInput = z.infer<typeof adminCreateSessionSchema>;
 
 export class AdminService {
   async listUsers(input: z.infer<typeof listSchema>) {
@@ -161,6 +165,7 @@ export class AdminService {
         durationMinutes: bookingSessions.durationMinutes,
         location: bookingSessions.location,
         status: bookingSessions.status,
+        maxStudents: bookingSessions.maxStudents,
         meetingLink: bookingSessions.meetingLink,
         notes: bookingSessions.notes,
         sessionNotes: bookingSessions.sessionNotes,
@@ -216,6 +221,93 @@ export class AdminService {
     });
 
     return paginated(enhancedItems, input.page, input.limit, total);
+  }
+
+  async createSession(adminId: number, data: AdminCreateSessionInput) {
+    const sessionDate = new Date(data.date);
+    if (isNaN(sessionDate.getTime())) throw new Error('SESSION_DATE_INVALID');
+
+    // Time conflict prevention: check if instructor has an active session on the same date and time
+    const existingConflict = await db
+      .select({
+        id: bookingSessions.id,
+        topic: bookingSessions.topic,
+        sessionFormat: bookingSessions.sessionFormat,
+        time: bookingSessions.time,
+        date: bookingSessions.date,
+      })
+      .from(bookingSessions)
+      .where(
+        and(
+          eq(bookingSessions.teacherId, adminId),
+          eq(bookingSessions.isArchived, false),
+          ne(bookingSessions.status, 'CANCELLED'),
+          sql`DATE(${bookingSessions.date}) = DATE(${sessionDate})`,
+          eq(bookingSessions.time, data.time),
+        )
+      )
+      .limit(1);
+
+    if (existingConflict.length > 0) {
+      const conf = existingConflict[0];
+      throw new Error(`TIME_CONFLICT: Instructor already has an active ${conf.sessionFormat} session ("${conf.topic}") on this date at ${data.time}.`);
+    }
+
+    const maxStudentsLimit = data.sessionFormat === 'PRIVATE' ? 1 : (data.maxStudents || 10);
+
+    const [newSession] = await db
+      .insert(bookingSessions)
+      .values({
+        teacherId: adminId,
+        studentId: data.sessionFormat === 'PRIVATE' ? (data.studentId || null) : null,
+        courseName: data.courseName,
+        topic: data.topic,
+        sessionFormat: data.sessionFormat,
+        date: sessionDate,
+        time: data.time,
+        durationMinutes: data.durationMinutes || 60,
+        location: data.location || 'ONLINE',
+        status: data.status || 'APPROVED',
+        maxStudents: maxStudentsLimit,
+        meetingLink: data.meetingLink,
+        notes: data.notes,
+        sessionNotes: { maxStudents: maxStudentsLimit },
+      })
+      .returning();
+
+    // If pre-assigned student to group session
+    if (data.sessionFormat === 'GROUP' && data.studentId) {
+      await db.insert(sessionStudents).values({
+        sessionId: newSession.id,
+        studentId: data.studentId,
+      }).onConflictDoNothing();
+    }
+
+    // Send in-app notification if student assigned
+    if (data.studentId) {
+      await db.insert(notifications).values({
+        userId: data.studentId,
+        title: `New Session Scheduled: ${data.topic}`,
+        message: `A ${data.sessionFormat.toLowerCase()} session has been scheduled for you on ${sessionDate.toLocaleDateString()} at ${data.time}.`,
+        type: 'session',
+        linkTab: 'schedule',
+      });
+    }
+
+    await db.insert(auditLogs).values({
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      action: 'CREATE_SESSION',
+      details: {
+        sessionId: newSession.id,
+        sessionFormat: data.sessionFormat,
+        topic: data.topic,
+        date: sessionDate,
+        time: data.time,
+      },
+    });
+
+    return newSession;
   }
 
   async updateSession(id: number, data: SessionStatusInput) {
@@ -1640,6 +1732,91 @@ export class AdminService {
       action,
       details,
     });
+  }
+
+  async broadcastNotification(adminId: number, data: BroadcastNotificationInput) {
+    let targetStudents: Array<{ id: number; name: string; email: string }> = [];
+
+    if (data.targetType === 'STUDENT' && data.studentId) {
+      targetStudents = await db
+        .select({ id: users.id, name: users.name, email: users.email })
+        .from(users)
+        .where(and(eq(users.id, data.studentId), eq(users.role, 'STUDENT')));
+      if (targetStudents.length === 0) throw new Error('STUDENT_NOT_FOUND');
+    } else if (data.targetType === 'COHORT' && data.cohort) {
+      targetStudents = await db
+        .select({ id: users.id, name: users.name, email: users.email })
+        .from(users)
+        .innerJoin(studentProfiles, eq(users.id, studentProfiles.userId))
+        .where(
+          and(
+            eq(users.role, 'STUDENT'),
+            ilike(studentProfiles.cohort, `%${data.cohort}%`)
+          )
+        );
+    } else if (data.targetType === 'COURSE' && data.course) {
+      targetStudents = await db
+        .select({ id: users.id, name: users.name, email: users.email })
+        .from(users)
+        .innerJoin(studentProfiles, eq(users.id, studentProfiles.userId))
+        .where(
+          and(
+            eq(users.role, 'STUDENT'),
+            ilike(studentProfiles.enrolledCourse, `%${data.course}%`)
+          )
+        );
+    } else {
+      // ALL active students
+      targetStudents = await db
+        .select({ id: users.id, name: users.name, email: users.email })
+        .from(users)
+        .where(and(eq(users.role, 'STUDENT'), eq(users.status, 'ACTIVE')));
+    }
+
+    if (targetStudents.length > 0) {
+      await db.insert(notifications).values(
+        targetStudents.map((s) => ({
+          userId: s.id,
+          title: data.title,
+          message: data.message,
+          type: data.type.toLowerCase(),
+          linkTab: data.linkTab || 'dashboard',
+          read: false,
+        }))
+      );
+
+      if (data.sendEmail) {
+        await db.insert(outboxEmails).values(
+          targetStudents.map((s) => ({
+            studentId: s.id,
+            recipientEmail: s.email,
+            subject: data.title,
+            body: data.message,
+            status: 'SENT',
+            sentAt: new Date(),
+          }))
+        );
+      }
+    }
+
+    await db.insert(auditLogs).values({
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      action: 'BROADCAST_NOTIFICATION',
+      details: {
+        title: data.title,
+        type: data.type,
+        targetType: data.targetType,
+        recipientCount: targetStudents.length,
+      },
+    });
+
+    return {
+      success: true,
+      recipientCount: targetStudents.length,
+      recipients: targetStudents.map((s) => s.name),
+      message: `Notification successfully sent to ${targetStudents.length} student${targetStudents.length === 1 ? '' : 's'}.`,
+    };
   }
 }
 

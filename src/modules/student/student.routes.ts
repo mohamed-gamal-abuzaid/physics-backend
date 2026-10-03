@@ -186,6 +186,7 @@ router.get('/assignments/:id', authenticate, authorize('student'), controller.as
 router.get('/submissions', authenticate, authorize('student'), controller.submissions);
 router.post('/assignments/:assignmentId/submissions', authenticate, authorize('student'), controller.submitAssignment);
 router.get('/sessions', authenticate, authorize('student'), controller.sessions);
+router.get('/sessions/available-slots', authenticate, controller.getAvailableSlots);
 router.post('/sessions', authenticate, authorize('student'), controller.createSession);
 router.patch('/sessions/:id/reschedule', authenticate, authorize('student'), controller.rescheduleSession);
 router.patch('/sessions/:id/cancel', authenticate, authorize('student'), controller.cancelSession);

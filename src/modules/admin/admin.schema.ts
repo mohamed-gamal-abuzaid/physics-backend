@@ -221,3 +221,30 @@ export const resourceListSchema = paginationSchema.extend({
   course: z.string().trim().max(100).optional(),
   topic: z.string().trim().max(100).optional(),
 });
+
+export const broadcastNotificationSchema = z.object({
+  targetType: z.enum(['ALL', 'STUDENT', 'COHORT', 'COURSE']).default('ALL'),
+  studentId: z.number().int().positive().optional(),
+  cohort: z.string().trim().max(100).optional(),
+  course: z.string().trim().max(255).optional(),
+  title: z.string().trim().min(2, 'Title is required').max(200),
+  message: z.string().trim().min(5, 'Message must be at least 5 characters').max(3000),
+  type: z.enum(['ASSIGNMENT', 'TASK', 'SESSION', 'UPDATE', 'ANNOUNCEMENT', 'GENERAL']).default('GENERAL'),
+  linkTab: z.string().trim().max(100).optional(),
+  sendEmail: z.boolean().optional(),
+});
+
+export const adminCreateSessionSchema = z.object({
+  courseName: z.string().trim().min(1, 'Course name is required').max(255),
+  topic: z.string().trim().min(1, 'Topic is required').max(255),
+  sessionFormat: z.enum(['PRIVATE', 'GROUP']).default('PRIVATE'),
+  date: z.coerce.date(),
+  time: z.string().trim().min(1, 'Time slot is required').max(100),
+  durationMinutes: z.number().int().positive().max(480).default(60),
+  location: z.string().trim().max(255).default('ONLINE'),
+  status: z.enum(['SCHEDULED', 'PENDING', 'APPROVED', 'COMPLETED', 'CANCELLED', 'RESCHEDULED', 'NO_SHOW']).default('APPROVED'),
+  studentId: z.number().int().positive().nullable().optional(),
+  maxStudents: z.number().int().min(1).max(100).default(10),
+  meetingLink: z.string().trim().max(500).optional(),
+  notes: z.string().trim().max(2000).optional(),
+});

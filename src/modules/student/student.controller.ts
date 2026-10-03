@@ -36,7 +36,13 @@ const handleError = (res: Response, error: any) => {
     INVOICE_NOT_FOUND: 404,
     TICKET_NOT_FOUND: 404,
     TICKET_CLOSED: 400,
+    TIME_CONFLICT: 409,
+    GROUP_CAPACITY_REACHED: 409,
+    STUDENT_ALREADY_IN_SESSION: 409,
   };
+  if (error.message?.startsWith('TIME_CONFLICT') || error.message?.startsWith('GROUP_CAPACITY_REACHED')) {
+    return res.status(409).json({ message: error.message });
+  }
   const status = statuses[error.message] || 500;
   return res.status(status).json({ message: status === 500 ? 'An error occurred' : error.message });
 };
@@ -93,6 +99,15 @@ export const sessions = async (req: AuthRequest, res: Response) => {
   if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
   try { return res.json({ sessions: await studentService.getSessions(userId(req), validation.data) }); }
   catch (error) { return handleError(res, error); }
+};
+
+export const getAvailableSlots = async (req: AuthRequest, res: Response) => {
+  try {
+    const slots = await studentService.getAvailableSlots(req.user?.id);
+    return res.json(slots);
+  } catch (error) {
+    return handleError(res, error);
+  }
 };
 
 export const createSession = async (req: AuthRequest, res: Response) => {

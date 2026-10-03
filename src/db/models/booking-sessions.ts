@@ -21,6 +21,7 @@ export const bookingSessions = pgTable('booking_sessions', {
   creditTypeDeducted: text('credit_type_deducted'),
   meetingLink: text('meeting_link'),
   notes: text('notes'),
+  maxStudents: integer('max_students').default(10),
   sessionNotes: jsonb('session_notes'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });

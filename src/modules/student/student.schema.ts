@@ -30,12 +30,13 @@ export const createSubmissionSchema = z.object({
 });
 
 export const createSessionSchema = z.object({
-  teacherId: z.number().int().positive(),
+  teacherId: z.number().int().positive().optional(),
+  existingSessionId: z.number().int().positive().optional(),
   assignedHomeworkId: z.number().int().positive().optional(),
   courseName: z.string().max(255).optional(),
   topic: z.string().max(255).optional(),
   sessionFormat: z.enum(['PRIVATE', 'GROUP']).default('PRIVATE'),
-  date: z.coerce.date(),
+  date: z.coerce.date().optional(),
   time: z.string().max(50).optional(),
   durationMinutes: z.number().int().positive().max(480).default(60),
   location: z.string().max(255).optional(),
