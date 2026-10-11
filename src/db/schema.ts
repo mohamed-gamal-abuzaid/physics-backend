@@ -14,6 +14,9 @@ export { resources } from './models/resources.js';
 export { reviews } from './models/reviews.js';
 export { tickets } from './models/tickets.js';
 
+export { levelSessionPricing } from './models/level-pricing.js';
+export { discounts } from './models/discounts.js';
+
 export {
 	userRoleEnum,
 	sessionStatusEnum,
@@ -25,4 +28,6 @@ export {
 	ticketPriorityEnum,
 	campaignStatusEnum,
 	reviewStatusEnum,
+	discountScopeEnum,
+	discountTypeEnum,
 } from './models/enums.js';

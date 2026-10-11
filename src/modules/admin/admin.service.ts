@@ -18,6 +18,8 @@ import { resources } from '../../db/models/resources.js';
 import { reviews } from '../../db/models/reviews.js';
 import { tickets, TicketMessage } from '../../db/models/tickets.js';
 import { studentProfiles, users } from '../../db/models/users.js';
+import { levelSessionPricing } from '../../db/models/level-pricing.js';
+import { discounts } from '../../db/models/discounts.js';
 import { hashPassword } from '../../utils/auth.js';
 import {
   addStudentAccountSchema,
@@ -30,10 +32,14 @@ import {
   broadcastNotificationSchema,
   campaignSchema,
   completeSessionSchema,
+  createDiscountSchema,
   createInvoiceSchema,
+  createLevelPricingSchema,
   crmListSchema,
   gradeSchema,
   hallOfFameSchema,
+  listDiscountsSchema,
+  listLevelPricingSchema,
   listSchema,
   paymentReviewSchema,
   resourceListSchema,
@@ -41,11 +47,19 @@ import {
   reviewModerationSchema,
   sessionStatusSchema,
   settingsSchema,
+  updateDiscountSchema,
   updateInvoiceStatusSchema,
+  updateLevelPricingSchema,
   updateStudentAcademicSchema,
   updateStudentStatusSchema,
   updateTicketSchema,
   updateUserSchema,
+  CreateLevelPricingInput,
+  UpdateLevelPricingInput,
+  ListLevelPricingInput,
+  CreateDiscountInput,
+  UpdateDiscountInput,
+  ListDiscountsInput,
 } from './admin.schema.js';
 import { getPagination, paginated } from '../../utils/pagination.js';
 
@@ -1817,6 +1831,344 @@ export class AdminService {
       recipients: targetStudents.map((s) => s.name),
       message: `Notification successfully sent to ${targetStudents.length} student${targetStudents.length === 1 ? '' : 's'}.`,
     };
+  }
+
+  // LEVEL PRICING MANAGEMENT
+  async listLevelPricing(input: ListLevelPricingInput) {
+    const condition = and(
+      input.levelName ? eq(levelSessionPricing.levelName, input.levelName) : undefined,
+      input.sessionFormat ? eq(levelSessionPricing.sessionFormat, input.sessionFormat) : undefined,
+      input.isActive !== undefined ? eq(levelSessionPricing.isActive, input.isActive) : undefined,
+      input.search ? or(
+        ilike(levelSessionPricing.levelName, `%${input.search}%`),
+        ilike(levelSessionPricing.title, `%${input.search}%`),
+        ilike(levelSessionPricing.stageCode, `%${input.search}%`),
+      ) : undefined,
+    );
+
+    const { limit, offset } = getPagination(input);
+    const [items, [{ total }]] = await Promise.all([
+      db
+        .select()
+        .from(levelSessionPricing)
+        .where(condition)
+        .orderBy(levelSessionPricing.levelName, levelSessionPricing.sessionsCount)
+        .limit(limit)
+        .offset(offset),
+      db.select({ total: count() }).from(levelSessionPricing).where(condition),
+    ]);
+
+    return paginated(items, input.page, input.limit, total);
+  }
+
+  async getLevelPricing(id: number) {
+    const [pricing] = await db
+      .select()
+      .from(levelSessionPricing)
+      .where(eq(levelSessionPricing.id, id))
+      .limit(1);
+
+    if (!pricing) throw new Error('LEVEL_PRICING_NOT_FOUND');
+    return pricing;
+  }
+
+  async createLevelPricing(data: CreateLevelPricingInput, adminId: number) {
+    const [pricing] = await db
+      .insert(levelSessionPricing)
+      .values({
+        levelName: data.levelName,
+        stageCode: data.stageCode,
+        sessionFormat: data.sessionFormat,
+        sessionsCount: data.sessionsCount,
+        title: data.title,
+        price: String(data.price),
+        currency: data.currency || 'EGP',
+        description: data.description,
+        isActive: data.isActive ?? true,
+      })
+      .returning();
+
+    await db.insert(auditLogs).values({
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      action: 'CREATE_LEVEL_PRICING',
+      details: { pricingId: pricing.id, ...data },
+    });
+
+    return pricing;
+  }
+
+  async updateLevelPricing(id: number, data: UpdateLevelPricingInput, adminId: number) {
+    const updateValues: Record<string, any> = { ...data, updatedAt: new Date() };
+    if (data.price !== undefined) {
+      updateValues.price = String(data.price);
+    }
+
+    const [pricing] = await db
+      .update(levelSessionPricing)
+      .set(updateValues)
+      .where(eq(levelSessionPricing.id, id))
+      .returning();
+
+    if (!pricing) throw new Error('LEVEL_PRICING_NOT_FOUND');
+
+    await db.insert(auditLogs).values({
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      action: 'UPDATE_LEVEL_PRICING',
+      details: { pricingId: id, ...data },
+    });
+
+    return pricing;
+  }
+
+  async deleteLevelPricing(id: number, adminId: number) {
+    const [pricing] = await db
+      .delete(levelSessionPricing)
+      .where(eq(levelSessionPricing.id, id))
+      .returning();
+
+    if (!pricing) throw new Error('LEVEL_PRICING_NOT_FOUND');
+
+    await db.insert(auditLogs).values({
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      action: 'DELETE_LEVEL_PRICING',
+      details: { pricingId: id, title: pricing.title, levelName: pricing.levelName },
+    });
+
+    return {
+      success: true,
+      message: `Pricing entry "${pricing.title}" has been deleted.`,
+    };
+  }
+
+  // DISCOUNTS MANAGEMENT
+  async listDiscounts(input: ListDiscountsInput) {
+    const condition = and(
+      input.scope ? eq(discounts.scope, input.scope) : undefined,
+      input.isActive !== undefined ? eq(discounts.isActive, input.isActive) : undefined,
+      input.search ? or(
+        ilike(discounts.code, `%${input.search}%`),
+        ilike(discounts.title, `%${input.search}%`),
+        ilike(discounts.targetLevel, `%${input.search}%`),
+      ) : undefined,
+    );
+
+    const { limit, offset } = getPagination(input);
+    const [items, [{ total }]] = await Promise.all([
+      db
+        .select({
+          id: discounts.id,
+          code: discounts.code,
+          title: discounts.title,
+          description: discounts.description,
+          scope: discounts.scope,
+          targetLevel: discounts.targetLevel,
+          targetStudentId: discounts.targetStudentId,
+          targetStudentName: users.name,
+          targetStudentEmail: users.email,
+          discountType: discounts.discountType,
+          value: discounts.value,
+          minSessionsCount: discounts.minSessionsCount,
+          maxUsageCount: discounts.maxUsageCount,
+          currentUsageCount: discounts.currentUsageCount,
+          validFrom: discounts.validFrom,
+          validUntil: discounts.validUntil,
+          isActive: discounts.isActive,
+          createdAt: discounts.createdAt,
+          updatedAt: discounts.updatedAt,
+        })
+        .from(discounts)
+        .leftJoin(users, eq(discounts.targetStudentId, users.id))
+        .where(condition)
+        .orderBy(desc(discounts.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db.select({ total: count() }).from(discounts).where(condition),
+    ]);
+
+    return paginated(items, input.page, input.limit, total);
+  }
+
+  async getDiscount(id: number) {
+    const [discount] = await db
+      .select({
+        id: discounts.id,
+        code: discounts.code,
+        title: discounts.title,
+        description: discounts.description,
+        scope: discounts.scope,
+        targetLevel: discounts.targetLevel,
+        targetStudentId: discounts.targetStudentId,
+        targetStudentName: users.name,
+        targetStudentEmail: users.email,
+        discountType: discounts.discountType,
+        value: discounts.value,
+        minSessionsCount: discounts.minSessionsCount,
+        maxUsageCount: discounts.maxUsageCount,
+        currentUsageCount: discounts.currentUsageCount,
+        validFrom: discounts.validFrom,
+        validUntil: discounts.validUntil,
+        isActive: discounts.isActive,
+        createdAt: discounts.createdAt,
+        updatedAt: discounts.updatedAt,
+      })
+      .from(discounts)
+      .leftJoin(users, eq(discounts.targetStudentId, users.id))
+      .where(eq(discounts.id, id))
+      .limit(1);
+
+    if (!discount) throw new Error('DISCOUNT_NOT_FOUND');
+    return discount;
+  }
+
+  async createDiscount(data: CreateDiscountInput, adminId: number) {
+    const [existing] = await db
+      .select({ id: discounts.id })
+      .from(discounts)
+      .where(eq(discounts.code, data.code.toUpperCase()))
+      .limit(1);
+
+    if (existing) throw new Error('DISCOUNT_CODE_EXISTS');
+
+    if (data.scope === 'STUDENT' && data.targetStudentId) {
+      const [student] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, data.targetStudentId), eq(users.role, 'STUDENT')))
+        .limit(1);
+      if (!student) throw new Error('STUDENT_NOT_FOUND');
+    }
+
+    const [discount] = await db
+      .insert(discounts)
+      .values({
+        code: data.code.toUpperCase(),
+        title: data.title,
+        description: data.description,
+        scope: data.scope,
+        targetLevel: data.scope === 'LEVEL' ? data.targetLevel : null,
+        targetStudentId: data.scope === 'STUDENT' ? data.targetStudentId : null,
+        discountType: data.discountType,
+        value: String(data.value),
+        minSessionsCount: data.minSessionsCount ?? 1,
+        maxUsageCount: data.maxUsageCount,
+        validFrom: data.validFrom,
+        validUntil: data.validUntil,
+        isActive: data.isActive ?? true,
+      })
+      .returning();
+
+    await db.insert(auditLogs).values({
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      action: 'CREATE_DISCOUNT',
+      details: { discountId: discount.id, ...data },
+    });
+
+    return discount;
+  }
+
+  async updateDiscount(id: number, data: UpdateDiscountInput, adminId: number) {
+    if (data.code) {
+      const [existing] = await db
+        .select({ id: discounts.id })
+        .from(discounts)
+        .where(and(eq(discounts.code, data.code.toUpperCase()), ne(discounts.id, id)))
+        .limit(1);
+      if (existing) throw new Error('DISCOUNT_CODE_EXISTS');
+    }
+
+    if (data.scope === 'STUDENT' && data.targetStudentId) {
+      const [student] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, data.targetStudentId), eq(users.role, 'STUDENT')))
+        .limit(1);
+      if (!student) throw new Error('STUDENT_NOT_FOUND');
+    }
+
+    const updateValues: Record<string, any> = {
+      ...data,
+      code: data.code ? data.code.toUpperCase() : undefined,
+      updatedAt: new Date(),
+    };
+    if (data.value !== undefined) {
+      updateValues.value = String(data.value);
+    }
+
+    const [discount] = await db
+      .update(discounts)
+      .set(updateValues)
+      .where(eq(discounts.id, id))
+      .returning();
+
+    if (!discount) throw new Error('DISCOUNT_NOT_FOUND');
+
+    await db.insert(auditLogs).values({
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      action: 'UPDATE_DISCOUNT',
+      details: { discountId: id, ...data },
+    });
+
+    return discount;
+  }
+
+  async deleteDiscount(id: number, adminId: number) {
+    const [discount] = await db
+      .delete(discounts)
+      .where(eq(discounts.id, id))
+      .returning();
+
+    if (!discount) throw new Error('DISCOUNT_NOT_FOUND');
+
+    await db.insert(auditLogs).values({
+      actorId: adminId,
+      actorRole: 'ADMIN',
+      action: 'DELETE_DISCOUNT',
+      details: { discountId: id, code: discount.code, title: discount.title },
+    });
+
+    return {
+      success: true,
+      message: `Discount code "${discount.code}" has been deleted.`,
+    };
+  }
+
+  // DELETE STUDENT MANAGEMENT (Item 5)
+  async deleteStudent(studentId: number, adminId: number) {
+    const [student] = await db
+      .select({ id: users.id, name: users.name, email: users.email, role: users.role })
+      .from(users)
+      .where(eq(users.id, studentId))
+      .limit(1);
+
+    if (!student) throw new Error('STUDENT_NOT_FOUND');
+    if (student.role !== 'STUDENT') {
+      throw new Error('CANNOT_DELETE_NON_STUDENT: Only students can be deleted through this endpoint.');
+    }
+
+    return db.transaction(async (tx) => {
+      await tx.delete(users).where(eq(users.id, studentId));
+
+      await tx.insert(auditLogs).values({
+        actorId: adminId,
+        actorRole: 'ADMIN',
+        action: 'DELETE_STUDENT',
+        details: {
+          studentId,
+          name: student.name,
+          email: student.email,
+        },
+      });
+
+      return {
+        success: true,
+        message: `Student account for ${student.name} (${student.email}) has been permanently deleted.`,
+      };
+    });
   }
 }
 

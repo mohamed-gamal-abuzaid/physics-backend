@@ -247,4 +247,57 @@ export const adminCreateSessionSchema = z.object({
   maxStudents: z.number().int().min(1).max(100).default(10),
   meetingLink: z.string().trim().max(500).optional(),
   notes: z.string().trim().max(2000).optional(),
-});
+});
+
+export const createLevelPricingSchema = z.object({
+  levelName: z.string().trim().min(1, 'Level name is required').max(100),
+  stageCode: z.string().trim().max(50).optional(),
+  sessionFormat: z.enum(['PRIVATE', 'GROUP']).default('PRIVATE'),
+  sessionsCount: z.coerce.number().int().positive('Sessions count must be at least 1').default(1),
+  title: z.string().trim().min(1, 'Title is required').max(200),
+  price: z.coerce.number().positive('Price must be greater than 0'),
+  currency: z.string().trim().default('EGP'),
+  description: z.string().trim().max(1000).optional(),
+  isActive: z.boolean().default(true),
+});
+
+export const updateLevelPricingSchema = createLevelPricingSchema.partial();
+
+export const listLevelPricingSchema = paginationSchema.extend({
+  levelName: z.string().trim().optional(),
+  sessionFormat: z.enum(['PRIVATE', 'GROUP']).optional(),
+  isActive: z.preprocess((val) => val === 'true' ? true : val === 'false' ? false : val, z.boolean().optional()),
+  search: z.string().trim().optional(),
+});
+
+export const createDiscountSchema = z.object({
+  code: z.string().trim().min(2, 'Discount code must be at least 2 characters').max(50),
+  title: z.string().trim().min(2, 'Title is required').max(200),
+  description: z.string().trim().max(1000).optional(),
+  scope: z.enum(['ALL', 'LEVEL', 'STUDENT']).default('ALL'),
+  targetLevel: z.string().trim().max(100).optional().nullable(),
+  targetStudentId: z.coerce.number().int().positive().optional().nullable(),
+  discountType: z.enum(['PERCENTAGE', 'FIXED']).default('PERCENTAGE'),
+  value: z.coerce.number().positive('Discount value must be greater than 0'),
+  minSessionsCount: z.coerce.number().int().min(1).default(1),
+  maxUsageCount: z.coerce.number().int().positive().optional().nullable(),
+  validFrom: z.coerce.date().optional().nullable(),
+  validUntil: z.coerce.date().optional().nullable(),
+  isActive: z.boolean().default(true),
+});
+
+export const updateDiscountSchema = createDiscountSchema.partial();
+
+export const listDiscountsSchema = paginationSchema.extend({
+  scope: z.enum(['ALL', 'LEVEL', 'STUDENT']).optional(),
+  search: z.string().trim().optional(),
+  isActive: z.preprocess((val) => val === 'true' ? true : val === 'false' ? false : val, z.boolean().optional()),
+});
+
+export type CreateLevelPricingInput = z.infer<typeof createLevelPricingSchema>;
+export type UpdateLevelPricingInput = z.infer<typeof updateLevelPricingSchema>;
+export type ListLevelPricingInput = z.infer<typeof listLevelPricingSchema>;
+
+export type CreateDiscountInput = z.infer<typeof createDiscountSchema>;
+export type UpdateDiscountInput = z.infer<typeof updateDiscountSchema>;
+export type ListDiscountsInput = z.infer<typeof listDiscountsSchema>;

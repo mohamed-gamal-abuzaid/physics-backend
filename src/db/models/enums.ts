@@ -10,3 +10,5 @@ export const ticketStatusEnum = pgEnum('ticket_status', ['OPEN', 'IN_PROGRESS', 
 export const ticketPriorityEnum = pgEnum('ticket_priority', ['LOW', 'MEDIUM', 'HIGH', 'URGENT']);
 export const campaignStatusEnum = pgEnum('campaign_status', ['DRAFT', 'SENDING', 'SENT', 'FAILED']);
 export const reviewStatusEnum = pgEnum('review_status', ['PENDING', 'APPROVED', 'REJECTED']);
+export const discountScopeEnum = pgEnum('discount_scope', ['ALL', 'LEVEL', 'STUDENT']);
+export const discountTypeEnum = pgEnum('discount_type', ['PERCENTAGE', 'FIXED']);

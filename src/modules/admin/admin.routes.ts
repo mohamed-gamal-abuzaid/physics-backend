@@ -423,6 +423,73 @@ const router = Router();
  *     tags: [Admin / Teacher]
  *     security: [{ bearerAuth: [] }]
  *     responses: { 200: { description: Outbox email logs } }
+ * /api/admin/level-pricing:
+ *   get:
+ *     summary: List level-specific session pricing tiers
+ *     tags: [Admin / Teacher]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Level pricing list } }
+ *   post:
+ *     summary: Create level-specific session pricing
+ *     tags: [Admin / Teacher]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 201: { description: Pricing tier created } }
+ * /api/admin/level-pricing/{id}:
+ *   get:
+ *     summary: Get single level pricing tier
+ *     tags: [Admin / Teacher]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses: { 200: { description: Level pricing details } }
+ *   patch:
+ *     summary: Update level pricing tier
+ *     tags: [Admin / Teacher]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses: { 200: { description: Pricing tier updated } }
+ *   delete:
+ *     summary: Delete level pricing tier
+ *     tags: [Admin / Teacher]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses: { 200: { description: Pricing tier deleted } }
+ * /api/admin/discounts:
+ *   get:
+ *     summary: List discount promo codes and targeted promotions
+ *     tags: [Admin / Teacher]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 200: { description: Discounts list } }
+ *   post:
+ *     summary: Create discount (for all, specific level, or specific student)
+ *     tags: [Admin / Teacher]
+ *     security: [{ bearerAuth: [] }]
+ *     responses: { 201: { description: Discount created } }
+ * /api/admin/discounts/{id}:
+ *   get:
+ *     summary: Get single discount
+ *     tags: [Admin / Teacher]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses: { 200: { description: Discount details } }
+ *   patch:
+ *     summary: Update discount
+ *     tags: [Admin / Teacher]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses: { 200: { description: Discount updated } }
+ *   delete:
+ *     summary: Delete discount
+ *     tags: [Admin / Teacher]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses: { 200: { description: Discount deleted } }
+ * /api/admin/crm/students/{id}:
+ *   delete:
+ *     summary: Delete student account permanently
+ *     tags: [Admin / Teacher]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+ *     responses: { 200: { description: Student deleted } }
  */
 
 router.get('/users', authenticate, authorize('admin'), controller.users);
@@ -465,14 +532,28 @@ router.post('/crm/students', authenticate, authorize('admin'), controller.addStu
 router.patch('/crm/students/:id/assign', authenticate, authorize('admin'), controller.assignScholar);
 router.post('/crm/students/:id/credentials', authenticate, authorize('admin'), controller.generateCredentials);
 router.patch('/crm/students/:id/status', authenticate, authorize('admin'), controller.updateStudentStatus);
+router.delete('/crm/students/:id', authenticate, authorize('admin'), controller.deleteStudent);
 
 router.get('/students', authenticate, authorize('admin'), controller.crmStudents);
 router.get('/students/:id', authenticate, authorize('admin'), controller.getStudent);
 router.patch('/students/:id', authenticate, authorize('admin'), controller.updateStudentAcademic);
 router.patch('/students/:id/academic', authenticate, authorize('admin'), controller.updateStudentAcademic);
+router.delete('/students/:id', authenticate, authorize('admin'), controller.deleteStudent);
 router.get('/students/:id/available-sessions', authenticate, authorize('admin'), controller.getAvailableSessionsForStudent);
 router.post('/students/:id/sessions', authenticate, authorize('admin'), controller.addStudentToSession);
 router.delete('/students/:id/sessions/:sessionId', authenticate, authorize('admin'), controller.removeStudentFromSession);
+
+router.get('/level-pricing', authenticate, authorize('admin'), controller.levelPricingList);
+router.get('/level-pricing/:id', authenticate, authorize('admin'), controller.getLevelPricing);
+router.post('/level-pricing', authenticate, authorize('admin'), controller.createLevelPricing);
+router.patch('/level-pricing/:id', authenticate, authorize('admin'), controller.updateLevelPricing);
+router.delete('/level-pricing/:id', authenticate, authorize('admin'), controller.deleteLevelPricing);
+
+router.get('/discounts', authenticate, authorize('admin'), controller.discountsList);
+router.get('/discounts/:id', authenticate, authorize('admin'), controller.getDiscount);
+router.post('/discounts', authenticate, authorize('admin'), controller.createDiscount);
+router.patch('/discounts/:id', authenticate, authorize('admin'), controller.updateDiscount);
+router.delete('/discounts/:id', authenticate, authorize('admin'), controller.deleteDiscount);
 
 router.get('/reviews', authenticate, authorize('admin'), controller.reviews);
 router.patch('/reviews/:id', authenticate, authorize('admin'), controller.moderateReview);

@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gt, ne, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gt, ilike, ne, or, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db } from '../../db/index.js';
 import { assignments } from '../../db/models/assignments.js';
@@ -11,19 +11,67 @@ import { resources } from '../../db/models/resources.js';
 import { reviews } from '../../db/models/reviews.js';
 import { tickets, TicketMessage } from '../../db/models/tickets.js';
 import { studentProfiles, users } from '../../db/models/users.js';
+import { levelSessionPricing } from '../../db/models/level-pricing.js';
+import { discounts } from '../../db/models/discounts.js';
 import {
   AddTicketMessageInput,
+  CalculatePriceInput,
   CreatePaymentInput,
   CreateReviewInput,
   CreateSessionInput,
   CreateSubmissionInput,
   CreateTicketInput,
+  GetPricingQueryInput,
   ListInput,
   ResourceListInput,
   RescheduleSessionInput,
   UpdateProfileInput,
 } from './student.schema.js';
 import { getPagination, paginated } from '../../utils/pagination.js';
+
+function computeDiscountForPricing(
+  pricingPrice: number,
+  pricingSessionsCount: number,
+  pricingLevelName: string,
+  studentLevel: string | null | undefined,
+  discount: {
+    id: number;
+    code: string;
+    title: string;
+    scope: 'ALL' | 'LEVEL' | 'STUDENT';
+    targetLevel: string | null;
+    targetStudentId: number | null;
+    discountType: 'PERCENTAGE' | 'FIXED';
+    value: string | number;
+    minSessionsCount: number | null;
+  }
+): { discountAmount: number; finalPrice: number } | null {
+  if (discount.minSessionsCount && pricingSessionsCount < discount.minSessionsCount) {
+    return null;
+  }
+
+  if (discount.scope === 'LEVEL') {
+    const target = (discount.targetLevel || '').toLowerCase().trim();
+    const matchesPricingLevel = pricingLevelName.toLowerCase().includes(target);
+    const matchesStudentLevel = studentLevel ? studentLevel.toLowerCase().includes(target) : false;
+    if (!matchesPricingLevel && !matchesStudentLevel) {
+      return null;
+    }
+  }
+
+  let discountAmount = 0;
+  const numValue = Number(discount.value);
+  if (discount.discountType === 'PERCENTAGE') {
+    discountAmount = Math.round(((pricingPrice * numValue) / 100) * 100) / 100;
+  } else {
+    discountAmount = Math.min(pricingPrice, numValue);
+  }
+
+  discountAmount = Math.min(pricingPrice, discountAmount);
+  const finalPrice = Math.max(0, Math.round((pricingPrice - discountAmount) * 100) / 100);
+
+  return { discountAmount, finalPrice };
+}
 
 export const canAccessAssignment = (
   assignment: { studentId: number | null; assignedStudentIds: unknown },
@@ -558,11 +606,210 @@ export class StudentService {
     return paginated(items, input.page, input.limit, total);
   }
 
+  async getAvailablePricing(userId: number, query: GetPricingQueryInput) {
+    const [profile] = await db.select().from(studentProfiles).where(eq(studentProfiles.userId, userId)).limit(1);
+    const studentLevel = query.level || profile?.year || profile?.gradeLevel || profile?.academicYear || undefined;
+
+    const pricingCondition = and(
+      eq(levelSessionPricing.isActive, true),
+      query.level ? eq(levelSessionPricing.levelName, query.level) : undefined,
+      query.format ? eq(levelSessionPricing.sessionFormat, query.format) : undefined,
+    );
+
+    const pricingItems = await db
+      .select()
+      .from(levelSessionPricing)
+      .where(pricingCondition)
+      .orderBy(levelSessionPricing.levelName, levelSessionPricing.sessionsCount);
+
+    const now = new Date();
+    const candidateDiscounts = await db
+      .select()
+      .from(discounts)
+      .where(
+        and(
+          eq(discounts.isActive, true),
+          or(sql`${discounts.validFrom} IS NULL`, sql`${discounts.validFrom} <= ${now}`),
+          or(sql`${discounts.validUntil} IS NULL`, sql`${discounts.validUntil} >= ${now}`),
+          or(sql`${discounts.maxUsageCount} IS NULL`, sql`${discounts.currentUsageCount} < ${discounts.maxUsageCount}`),
+          or(
+            eq(discounts.scope, 'ALL'),
+            and(eq(discounts.scope, 'STUDENT'), eq(discounts.targetStudentId, userId)),
+            studentLevel ? and(eq(discounts.scope, 'LEVEL'), ilike(discounts.targetLevel, `%${studentLevel}%`)) : undefined,
+          )
+        )
+      )
+      .orderBy(desc(discounts.createdAt));
+
+    const result = pricingItems.map((item) => {
+      const originalPrice = Number(item.price);
+      let bestDiscount: any = null;
+      let maxDeduction = 0;
+      let finalPrice = originalPrice;
+
+      for (const disc of candidateDiscounts) {
+        const calc = computeDiscountForPricing(
+          originalPrice,
+          item.sessionsCount,
+          item.levelName,
+          studentLevel,
+          disc,
+        );
+        if (calc && calc.discountAmount > maxDeduction) {
+          maxDeduction = calc.discountAmount;
+          finalPrice = calc.finalPrice;
+          bestDiscount = {
+            id: disc.id,
+            code: disc.code,
+            title: disc.title,
+            discountType: disc.discountType,
+            value: Number(disc.value),
+            scope: disc.scope,
+          };
+        }
+      }
+
+      return {
+        ...item,
+        originalPrice,
+        discountAmount: maxDeduction,
+        finalPrice,
+        hasDiscount: maxDeduction > 0,
+        applicableDiscount: bestDiscount,
+      };
+    });
+
+    return {
+      pricing: result,
+      studentLevel: studentLevel ?? null,
+      availableDiscounts: candidateDiscounts.map((d) => ({
+        code: d.code,
+        title: d.title,
+        scope: d.scope,
+        discountType: d.discountType,
+        value: Number(d.value),
+      })),
+    };
+  }
+
+  async calculatePrice(userId: number, input: CalculatePriceInput) {
+    const [item] = await db
+      .select()
+      .from(levelSessionPricing)
+      .where(and(eq(levelSessionPricing.id, input.pricingId), eq(levelSessionPricing.isActive, true)))
+      .limit(1);
+
+    if (!item) throw new Error('LEVEL_PRICING_NOT_FOUND');
+
+    const [profile] = await db.select().from(studentProfiles).where(eq(studentProfiles.userId, userId)).limit(1);
+    const studentLevel = profile?.year || profile?.gradeLevel || profile?.academicYear || undefined;
+    const originalPrice = Number(item.price);
+    const now = new Date();
+
+    if (input.discountCode) {
+      const [disc] = await db
+        .select()
+        .from(discounts)
+        .where(
+          and(
+            eq(discounts.code, input.discountCode.toUpperCase()),
+            eq(discounts.isActive, true),
+            or(sql`${discounts.validFrom} IS NULL`, sql`${discounts.validFrom} <= ${now}`),
+            or(sql`${discounts.validUntil} IS NULL`, sql`${discounts.validUntil} >= ${now}`),
+            or(sql`${discounts.maxUsageCount} IS NULL`, sql`${discounts.currentUsageCount} < ${discounts.maxUsageCount}`),
+          )
+        )
+        .limit(1);
+
+      if (!disc) {
+        throw new Error('INVALID_DISCOUNT_CODE: The provided discount coupon is invalid or expired.');
+      }
+
+      if (disc.scope === 'STUDENT' && disc.targetStudentId !== userId) {
+        throw new Error('INVALID_DISCOUNT_CODE: This discount code is restricted to another student account.');
+      }
+
+      const calc = computeDiscountForPricing(
+        originalPrice,
+        item.sessionsCount,
+        item.levelName,
+        studentLevel,
+        disc,
+      );
+
+      if (!calc) {
+        throw new Error(`INVALID_DISCOUNT_CODE: This discount requires a minimum of ${disc.minSessionsCount} sessions or does not apply to ${item.levelName}.`);
+      }
+
+      return {
+        pricing: item,
+        originalPrice,
+        discountAmount: calc.discountAmount,
+        finalPrice: calc.finalPrice,
+        discountApplied: {
+          id: disc.id,
+          code: disc.code,
+          title: disc.title,
+          discountType: disc.discountType,
+          value: Number(disc.value),
+          scope: disc.scope,
+        },
+      };
+    }
+
+    const autoPricing = await this.getAvailablePricing(userId, { level: item.levelName });
+    const matched = autoPricing.pricing.find((p) => p.id === item.id);
+
+    return {
+      pricing: item,
+      originalPrice,
+      discountAmount: matched?.discountAmount ?? 0,
+      finalPrice: matched?.finalPrice ?? originalPrice,
+      discountApplied: matched?.applicableDiscount ?? null,
+    };
+  }
+
   async createPayment(userId: number, data: CreatePaymentInput) {
+    let packageName = data.packageName;
+    let sessionsCount = data.sessionsCount;
+    let creditType = data.creditType;
+    let originalAmount = data.originalAmount ? String(data.originalAmount) : undefined;
+    let discountAmount = data.discountAmount ? String(data.discountAmount) : undefined;
+    let discountCode = data.discountCode;
+
+    if (data.pricingId) {
+      const [pricing] = await db
+        .select()
+        .from(levelSessionPricing)
+        .where(eq(levelSessionPricing.id, data.pricingId))
+        .limit(1);
+
+      if (pricing) {
+        packageName = packageName || pricing.title;
+        sessionsCount = sessionsCount || pricing.sessionsCount;
+        creditType = creditType || (pricing.sessionFormat === 'PRIVATE' ? 'private' : 'group');
+        originalAmount = originalAmount || String(pricing.price);
+      }
+    }
+
+    if (discountCode) {
+      await db
+        .update(discounts)
+        .set({ currentUsageCount: sql`${discounts.currentUsageCount} + 1` })
+        .where(eq(discounts.code, discountCode.toUpperCase()));
+    }
+
     const [payment] = await db.insert(paymentProofs).values({
       ...data,
       studentId: userId,
+      pricingId: data.pricingId,
+      packageName,
+      sessionsCount,
+      creditType,
       amount: String(data.amount),
+      originalAmount,
+      discountCode,
+      discountAmount,
       status: 'PENDING',
     }).returning();
     return payment;

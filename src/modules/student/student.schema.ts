@@ -49,14 +49,28 @@ export const rescheduleSessionSchema = z.object({
 });
 
 export const createPaymentSchema = z.object({
+  pricingId: z.coerce.number().int().positive().optional(),
   packageName: z.string().max(255).optional(),
   sessionsCount: z.number().int().positive().optional(),
   creditType: z.string().max(100).optional(),
   amount: z.union([z.number().positive(), z.string().regex(/^\d+(\.\d{1,2})?$/)]),
+  originalAmount: z.union([z.number().positive(), z.string().regex(/^\d+(\.\d{1,2})?$/)]).optional(),
+  discountCode: z.string().trim().max(50).optional(),
+  discountAmount: z.union([z.number().min(0), z.string().regex(/^\d+(\.\d{1,2})?$/)]).optional(),
   paymentMethod: z.string().max(100).optional(),
   senderAccountOrPhone: z.string().max(255).optional(),
   transactionRef: z.string().max(255).optional(),
   screenshotUrl: z.string().url(),
+});
+
+export const getPricingQuerySchema = z.object({
+  level: z.string().trim().optional(),
+  format: z.enum(['PRIVATE', 'GROUP']).optional(),
+});
+
+export const calculatePriceSchema = z.object({
+  pricingId: z.coerce.number().int().positive('Pricing ID is required'),
+  discountCode: z.string().trim().max(50).optional(),
 });
 
 export const createReviewSchema = z.object({
@@ -89,6 +103,8 @@ export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 export type CreateSubmissionInput = z.infer<typeof createSubmissionSchema>;
 export type CreateSessionInput = z.infer<typeof createSessionSchema>;
 export type CreatePaymentInput = z.infer<typeof createPaymentSchema>;
+export type GetPricingQueryInput = z.infer<typeof getPricingQuerySchema>;
+export type CalculatePriceInput = z.infer<typeof calculatePriceSchema>;
 export type CreateReviewInput = z.infer<typeof createReviewSchema>;
 export type CreateTicketInput = z.infer<typeof createTicketSchema>;
 export type AddTicketMessageInput = z.infer<typeof addTicketMessageSchema>;

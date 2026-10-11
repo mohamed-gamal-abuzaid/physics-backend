@@ -12,11 +12,15 @@ import {
   broadcastNotificationSchema,
   campaignSchema,
   completeSessionSchema,
+  createDiscountSchema,
   createInvoiceSchema,
+  createLevelPricingSchema,
   crmListSchema,
   gradeSchema,
   groupSessionLinkSchema,
   hallOfFameSchema,
+  listDiscountsSchema,
+  listLevelPricingSchema,
   listSchema,
   paymentReviewSchema,
   resourceListSchema,
@@ -24,7 +28,9 @@ import {
   reviewModerationSchema,
   sessionStatusSchema,
   settingsSchema,
+  updateDiscountSchema,
   updateInvoiceStatusSchema,
+  updateLevelPricingSchema,
   updateStudentAcademicSchema,
   updateStudentStatusSchema,
   updateTicketSchema,
@@ -49,10 +55,17 @@ const errorStatus: Record<string, number> = {
   REVIEW_NOT_FOUND: 404,
   HALL_OF_FAME_NOT_FOUND: 404,
   CAMPAIGN_NOT_FOUND: 404,
+  LEVEL_PRICING_NOT_FOUND: 404,
+  DISCOUNT_NOT_FOUND: 404,
+  DISCOUNT_CODE_EXISTS: 409,
+  CANNOT_DELETE_NON_STUDENT: 400,
   EMAIL_EXISTS: 409,
 };
 const handleError = (res: Response, error: any) => {
   console.error('[Admin Controller Error]:', error);
+  if (error.message?.startsWith('CANNOT_DELETE_NON_STUDENT')) {
+    return res.status(400).json({ message: error.message });
+  }
   const status = errorStatus[error.message] || 500;
   return res.status(status).json({ message: status === 500 ? 'An error occurred' : error.message });
 };
@@ -409,5 +422,72 @@ export const outbox = async (req: AuthRequest, res: Response) => {
   const validation = listSchema.safeParse(req.query);
   if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
   try { return res.json({ outbox: await adminService.listOutbox(validation.data) }); }
+  catch (error) { return handleError(res, error); }
+};
+
+export const levelPricingList = async (req: AuthRequest, res: Response) => {
+  const validation = listLevelPricingSchema.safeParse(req.query);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try { return res.json({ pricing: await adminService.listLevelPricing(validation.data) }); }
+  catch (error) { return handleError(res, error); }
+};
+
+export const getLevelPricing = async (req: AuthRequest, res: Response) => {
+  try { return res.json({ pricing: await adminService.getLevelPricing(parseId(req.params.id)) }); }
+  catch (error) { return handleError(res, error); }
+};
+
+export const createLevelPricing = async (req: AuthRequest, res: Response) => {
+  const validation = createLevelPricingSchema.safeParse(req.body);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try { return res.status(201).json({ pricing: await adminService.createLevelPricing(validation.data, actorId(req)) }); }
+  catch (error) { return handleError(res, error); }
+};
+
+export const updateLevelPricing = async (req: AuthRequest, res: Response) => {
+  const validation = updateLevelPricingSchema.safeParse(req.body);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try { return res.json({ pricing: await adminService.updateLevelPricing(parseId(req.params.id), validation.data, actorId(req)) }); }
+  catch (error) { return handleError(res, error); }
+};
+
+export const deleteLevelPricing = async (req: AuthRequest, res: Response) => {
+  try { return res.json(await adminService.deleteLevelPricing(parseId(req.params.id), actorId(req))); }
+  catch (error) { return handleError(res, error); }
+};
+
+export const discountsList = async (req: AuthRequest, res: Response) => {
+  const validation = listDiscountsSchema.safeParse(req.query);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try { return res.json({ discounts: await adminService.listDiscounts(validation.data) }); }
+  catch (error) { return handleError(res, error); }
+};
+
+export const getDiscount = async (req: AuthRequest, res: Response) => {
+  try { return res.json({ discount: await adminService.getDiscount(parseId(req.params.id)) }); }
+  catch (error) { return handleError(res, error); }
+};
+
+export const createDiscount = async (req: AuthRequest, res: Response) => {
+  const validation = createDiscountSchema.safeParse(req.body);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try { return res.status(201).json({ discount: await adminService.createDiscount(validation.data, actorId(req)) }); }
+  catch (error) { return handleError(res, error); }
+};
+
+export const updateDiscount = async (req: AuthRequest, res: Response) => {
+  const validation = updateDiscountSchema.safeParse(req.body);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try { return res.json({ discount: await adminService.updateDiscount(parseId(req.params.id), validation.data, actorId(req)) }); }
+  catch (error) { return handleError(res, error); }
+};
+
+export const deleteDiscount = async (req: AuthRequest, res: Response) => {
+  try { return res.json(await adminService.deleteDiscount(parseId(req.params.id), actorId(req))); }
+  catch (error) { return handleError(res, error); }
+};
+
+export const deleteStudent = async (req: AuthRequest, res: Response) => {
+  try { return res.json(await adminService.deleteStudent(parseId(req.params.id), actorId(req))); }
   catch (error) { return handleError(res, error); }
 };

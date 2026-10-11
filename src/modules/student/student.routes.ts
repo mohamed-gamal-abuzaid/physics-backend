@@ -176,6 +176,31 @@ const router = Router();
  *             properties:
  *               text: { type: string, example: "Thank you for the clarification!" }
  *     responses: { 200: { description: Reply appended } }
+ * /api/student/pricing:
+ *   get:
+ *     summary: Discover available level session packages and view applicable discounts
+ *     tags: [Student]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { name: level, in: query, schema: { type: string } }
+ *       - { name: format, in: query, schema: { type: string, enum: [PRIVATE, GROUP] } }
+ *     responses: { 200: { description: Level pricing list with calculated discounts } }
+ * /api/student/pricing/calculate:
+ *   post:
+ *     summary: Calculate discounted price for a session package using coupon or auto-discount
+ *     tags: [Student]
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [pricingId]
+ *             properties:
+ *               pricingId: { type: integer, example: 1 }
+ *               discountCode: { type: string, example: "PHYSICS20" }
+ *     responses: { 200: { description: Calculated discount breakdown } }
  */
 
 router.get('/dashboard', authenticate, authorize('student'), controller.dashboard);
@@ -194,6 +219,8 @@ router.get('/notifications', authenticate, authorize('student', 'admin'), contro
 router.patch('/notifications/:id/read', authenticate, authorize('student', 'admin'), controller.markNotificationRead);
 router.get('/resources', authenticate, authorize('student'), controller.resources);
 router.post('/resources/:id/download', authenticate, authorize('student'), controller.downloadResource);
+router.get('/pricing', authenticate, authorize('student'), controller.getPricing);
+router.post('/pricing/calculate', authenticate, authorize('student'), controller.calculatePrice);
 router.get('/payments', authenticate, authorize('student'), controller.payments);
 router.post('/payments', authenticate, authorize('student'), controller.createPayment);
 router.get('/reviews', authenticate, authorize('student'), controller.reviews);

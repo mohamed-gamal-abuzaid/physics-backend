@@ -3,11 +3,13 @@ import { AuthRequest } from '../../middlewares/auth.middleware.js';
 import { studentService } from './student.service.js';
 import {
   addTicketMessageSchema,
+  calculatePriceSchema,
   createPaymentSchema,
   createReviewSchema,
   createSessionSchema,
   createSubmissionSchema,
   createTicketSchema,
+  getPricingQuerySchema,
   listSchema,
   rescheduleSessionSchema,
   resourceListSchema,
@@ -39,9 +41,16 @@ const handleError = (res: Response, error: any) => {
     TIME_CONFLICT: 409,
     GROUP_CAPACITY_REACHED: 409,
     STUDENT_ALREADY_IN_SESSION: 409,
+    LEVEL_PRICING_NOT_FOUND: 404,
   };
-  if (error.message?.startsWith('TIME_CONFLICT') || error.message?.startsWith('GROUP_CAPACITY_REACHED')) {
+  if (
+    error.message?.startsWith('TIME_CONFLICT') ||
+    error.message?.startsWith('GROUP_CAPACITY_REACHED')
+  ) {
     return res.status(409).json({ message: error.message });
+  }
+  if (error.message?.startsWith('INVALID_DISCOUNT_CODE')) {
+    return res.status(400).json({ message: error.message });
   }
   const status = statuses[error.message] || 500;
   return res.status(status).json({ message: status === 500 ? 'An error occurred' : error.message });
@@ -215,4 +224,26 @@ export const addTicketMessage = async (req: AuthRequest, res: Response) => {
   if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
   try { return res.json({ ticket: await studentService.addTicketMessage(userId(req), Number(req.params.id), validation.data) }); }
   catch (error) { return handleError(res, error); }
+};
+
+export const getPricing = async (req: AuthRequest, res: Response) => {
+  const validation = getPricingQuerySchema.safeParse(req.query);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try {
+    const result = await studentService.getAvailablePricing(userId(req), validation.data);
+    return res.json(result);
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
+export const calculatePrice = async (req: AuthRequest, res: Response) => {
+  const validation = calculatePriceSchema.safeParse(req.body);
+  if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
+  try {
+    const result = await studentService.calculatePrice(userId(req), validation.data);
+    return res.json(result);
+  } catch (error) {
+    return handleError(res, error);
+  }
 };
