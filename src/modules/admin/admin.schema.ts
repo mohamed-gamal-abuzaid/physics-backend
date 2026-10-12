@@ -22,6 +22,9 @@ export const assignmentSchema = z.object({
   description: z.string().optional(),
   dueDate: z.coerce.date().optional(),
   totalPoints: z.number().int().positive().optional(),
+  targetScope: z.enum(['ALL', 'LEVEL', 'GROUP', 'STUDENT']).optional(),
+  targetLevel: z.string().trim().max(100).optional().nullable(),
+  targetCohort: z.string().trim().max(100).optional().nullable(),
   studentId: z.number().int().positive().nullable().optional(),
   assignedStudentIds: z.array(z.number().int().positive()).optional(),
   attachments: z.array(z.unknown()).optional(),
@@ -61,9 +64,13 @@ export const resourceSchema = z.object({
   fileSize: z.string().max(50).optional(),
   author: z.string().max(255).optional(),
   description: z.string().optional(),
-  previewUrl: z.string().url().optional(),
-  fileUrl: z.string().url().optional(),
+  previewUrl: z.string().optional(),
+  fileUrl: z.string().optional(),
   badge: z.string().max(100).optional(),
+  targetScope: z.enum(['ALL', 'LEVEL', 'GROUP', 'STUDENT']).optional(),
+  targetLevel: z.string().trim().max(100).optional().nullable(),
+  targetCohort: z.string().trim().max(100).optional().nullable(),
+  targetStudentId: z.number().int().positive().nullable().optional(),
 });
 
 export const settingsSchema = z.object({

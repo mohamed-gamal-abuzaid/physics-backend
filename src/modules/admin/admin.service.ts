@@ -116,8 +116,105 @@ export class AdminService {
     return paginated(items, input.page, input.limit, total);
   }
 
+  private async resolveTargetStudentIds(options: {
+    targetScope?: 'ALL' | 'LEVEL' | 'GROUP' | 'STUDENT';
+    targetLevel?: string | null;
+    targetCohort?: string | null;
+    studentId?: number | null;
+    assignedStudentIds?: number[];
+  }): Promise<number[]> {
+    const { targetScope = 'ALL', targetLevel, targetCohort, studentId, assignedStudentIds } = options;
+
+    if (targetScope === 'STUDENT') {
+      if (studentId) return [studentId];
+      if (assignedStudentIds && assignedStudentIds.length > 0) return assignedStudentIds;
+      return [];
+    }
+
+    if (targetScope === 'LEVEL' && targetLevel) {
+      const records = await db
+        .select({ id: users.id })
+        .from(users)
+        .innerJoin(studentProfiles, eq(users.id, studentProfiles.userId))
+        .where(
+          and(
+            eq(users.role, 'STUDENT'),
+            or(
+              ilike(studentProfiles.year, `%${targetLevel}%`),
+              ilike(studentProfiles.academicYear, `%${targetLevel}%`),
+              ilike(studentProfiles.gradeLevel, `%${targetLevel}%`)
+            )
+          )
+        );
+      return records.map((r) => r.id);
+    }
+
+    if (targetScope === 'GROUP' && targetCohort) {
+      const records = await db
+        .select({ id: users.id })
+        .from(users)
+        .innerJoin(studentProfiles, eq(users.id, studentProfiles.userId))
+        .where(
+          and(
+            eq(users.role, 'STUDENT'),
+            or(
+              ilike(studentProfiles.cohort, `%${targetCohort}%`),
+              ilike(studentProfiles.enrolledCourse, `%${targetCohort}%`)
+            )
+          )
+        );
+      return records.map((r) => r.id);
+    }
+
+    if (assignedStudentIds && assignedStudentIds.length > 0 && targetScope !== 'ALL') {
+      return assignedStudentIds;
+    }
+
+    const allStudents = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.role, 'STUDENT'));
+    return allStudents.map((s) => s.id);
+  }
+
   async createAssignment(data: AssignmentInput) {
-    const [assignment] = await db.insert(assignments).values(data).returning();
+    const resolvedIds = await this.resolveTargetStudentIds({
+      targetScope: data.targetScope,
+      targetLevel: data.targetLevel,
+      targetCohort: data.targetCohort,
+      studentId: data.studentId,
+      assignedStudentIds: data.assignedStudentIds,
+    });
+
+    const primaryStudentId = data.targetScope === 'STUDENT' ? (data.studentId || resolvedIds[0] || null) : null;
+    const assignedList = resolvedIds.length > 0 ? resolvedIds : (data.assignedStudentIds || null);
+
+    const [assignment] = await db.insert(assignments).values({
+      title: data.title,
+      course: data.course,
+      module: data.module,
+      description: data.description,
+      dueDate: data.dueDate,
+      totalPoints: data.totalPoints ?? 100,
+      studentId: primaryStudentId,
+      assignedStudentIds: assignedList,
+      attachments: (data.attachments as any) || null,
+    }).returning();
+
+    if (resolvedIds.length > 0) {
+      const formattedDate = data.dueDate ? new Date(data.dueDate).toLocaleDateString() : 'No deadline';
+      await db.insert(notifications).values(
+        resolvedIds.map((userId) => ({
+          userId,
+          title: 'New Homework Assigned',
+          message: `New assignment "${data.title}" has been assigned. Due: ${formattedDate}. Check your assignments portal.`,
+          type: 'academic',
+          linkTab: 'academic',
+          read: false,
+        }))
+      );
+    }
+
     return assignment;
   }
 
@@ -866,7 +963,36 @@ export class AdminService {
   }
 
   async createResource(data: ResourceInput) {
-    const [resource] = await db.insert(resources).values(data).returning();
+    const {
+      targetScope,
+      targetLevel,
+      targetCohort,
+      targetStudentId,
+      ...resourceData
+    } = data;
+
+    const [resource] = await db.insert(resources).values(resourceData).returning();
+
+    const resolvedIds = await this.resolveTargetStudentIds({
+      targetScope,
+      targetLevel,
+      targetCohort,
+      studentId: targetStudentId,
+    });
+
+    if (resolvedIds.length > 0) {
+      await db.insert(notifications).values(
+        resolvedIds.map((userId) => ({
+          userId,
+          title: 'New Learning Material Available',
+          message: `A new ${data.category || 'resource'} "${data.title}" (${data.fileFormat || 'Document'}) is now available in the Resource Library.`,
+          type: 'academic',
+          linkTab: 'academic',
+          read: false,
+        }))
+      );
+    }
+
     return resource;
   }
 
