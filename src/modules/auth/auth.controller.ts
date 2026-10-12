@@ -7,7 +7,11 @@ export const register = async (req: Request, res: Response) => {
   try {
     const validation = registerSchema.safeParse(req.body);
     if (!validation.success) {
-      return res.status(400).json({ errors: validation.error.format() });
+      const firstIssue = validation.error.issues[0]?.message || 'Validation failed';
+      return res.status(400).json({
+        message: firstIssue,
+        errors: validation.error.format(),
+      });
     }
 
     const result = await authService.register(validation.data);
