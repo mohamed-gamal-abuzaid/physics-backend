@@ -217,8 +217,8 @@ router.patch('/sessions/:id/reschedule', authenticate, authorize('student'), con
 router.patch('/sessions/:id/cancel', authenticate, authorize('student'), controller.cancelSession);
 router.get('/notifications', authenticate, authorize('student', 'admin'), controller.notifications);
 router.patch('/notifications/:id/read', authenticate, authorize('student', 'admin'), controller.markNotificationRead);
-router.get('/resources', authenticate, authorize('student'), controller.resources);
-router.post('/resources/:id/download', authenticate, authorize('student'), controller.downloadResource);
+router.get('/resources', authenticate, authorize('student', 'admin'), controller.resources);
+router.post('/resources/:id/download', authenticate, authorize('student', 'admin'), controller.downloadResource);
 router.get('/pricing', authenticate, authorize('student'), controller.getPricing);
 router.post('/pricing/calculate', authenticate, authorize('student'), controller.calculatePrice);
 router.get('/payments', authenticate, authorize('student'), controller.payments);
