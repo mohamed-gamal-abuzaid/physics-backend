@@ -231,5 +231,6 @@ router.get('/tickets', authenticate, authorize('student'), controller.tickets);
 router.post('/tickets', authenticate, authorize('student'), controller.createTicket);
 router.get('/tickets/:id', authenticate, authorize('student'), controller.ticket);
 router.post('/tickets/:id/messages', authenticate, authorize('student'), controller.addTicketMessage);
+router.post('/free-trial', authenticate, authorize('student'), controller.requestFreeTrial);
 
 export default router;

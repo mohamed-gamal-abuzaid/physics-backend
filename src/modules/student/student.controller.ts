@@ -42,6 +42,7 @@ const handleError = (res: Response, error: any) => {
     GROUP_CAPACITY_REACHED: 409,
     STUDENT_ALREADY_IN_SESSION: 409,
     LEVEL_PRICING_NOT_FOUND: 404,
+    FREE_TRIAL_ALREADY_USED: 400,
   };
   if (
     error.message?.startsWith('TIME_CONFLICT') ||
@@ -242,6 +243,15 @@ export const calculatePrice = async (req: AuthRequest, res: Response) => {
   if (!validation.success) return res.status(400).json({ errors: validation.error.format() });
   try {
     const result = await studentService.calculatePrice(userId(req), validation.data);
+    return res.json(result);
+  } catch (error) {
+    return handleError(res, error);
+  }
+};
+
+export const requestFreeTrial = async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await studentService.requestFreeTrial(userId(req));
     return res.json(result);
   } catch (error) {
     return handleError(res, error);

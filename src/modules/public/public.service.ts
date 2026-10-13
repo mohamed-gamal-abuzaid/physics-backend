@@ -1,8 +1,9 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { db } from '../../db/index.js';
 import { appSettings } from '../../db/models/app-settings.js';
 import { hallOfFame } from '../../db/models/hall-of-fame.js';
+import { notifications } from '../../db/models/notifications.js';
 import { reviews } from '../../db/models/reviews.js';
 import { studentProfiles, users } from '../../db/models/users.js';
 import { levelSessionPricing } from '../../db/models/level-pricing.js';
@@ -219,6 +220,25 @@ export class PublicService {
         registeredVia: 'Free Trial',
         isAccountGranted: false,
       });
+
+      // Notify all active admins to review and allocate 1 free trial session
+      const admins = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.role, 'ADMIN'), eq(users.status, 'ACTIVE')));
+
+      if (admins.length > 0) {
+        await tx.insert(notifications).values(
+          admins.map((admin) => ({
+            userId: admin.id,
+            title: 'New Free Trial Request',
+            message: `${data.name} (${data.email}) requested a Free Trial session. Please review and grant 1 free trial session in the students directory.`,
+            type: 'SESSION',
+            linkTab: 'students',
+            read: false,
+          }))
+        );
+      }
 
       return {
         success: true,

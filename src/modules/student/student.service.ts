@@ -207,6 +207,7 @@ export class StudentService {
       registeredVia: sp?.registeredVia ?? null,
       joinedDate: sp?.joinedDate ? sp.joinedDate.toISOString() : null,
       notes: sp?.notes ?? null,
+      hasUsedFreeTrial: sp?.registeredVia === 'Free Trial' || (sp?.totalCredits ?? 0) > 0 || (sp?.remainingCredits ?? 0) > 0 || (sp?.remainingPrivateCredits ?? 0) > 0 || (sp?.remainingGroupCredits ?? 0) > 0,
     };
   }
 
@@ -1018,6 +1019,43 @@ export class StudentService {
       .returning();
 
     return updatedTicket;
+  }
+
+  async requestFreeTrial(userId: number) {
+    const profile = await this.getProfile(userId);
+    if (profile.hasUsedFreeTrial) {
+      throw new Error('FREE_TRIAL_ALREADY_USED');
+    }
+
+    // Mark as registeredVia Free Trial
+    await db
+      .update(studentProfiles)
+      .set({ registeredVia: 'Free Trial' })
+      .where(eq(studentProfiles.userId, userId));
+
+    // Notify all active admins to allocate 1 free trial session to this student
+    const admins = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.role, 'ADMIN'), eq(users.status, 'ACTIVE')));
+
+    if (admins.length > 0) {
+      await db.insert(notifications).values(
+        admins.map((admin) => ({
+          userId: admin.id,
+          title: 'Free Trial Session Request',
+          message: `${profile.name} (${profile.email}) requested their 1 Free Trial session. Please allocate 1 session to this student.`,
+          type: 'SESSION',
+          linkTab: 'students',
+          read: false,
+        }))
+      );
+    }
+
+    return {
+      success: true,
+      message: 'Your free trial request has been submitted! Your instructor will add your free trial session shortly.',
+    };
   }
 }
 
