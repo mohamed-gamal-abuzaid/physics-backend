@@ -93,17 +93,65 @@ export class StudentService {
       this.getSubmissions(userId, input),
     ]);
 
+    const sessions = sessionList.items || [];
+    const submissions = submissionList.items || [];
+    const assignments = assignmentList.items || [];
+    const notifications = notificationList.items || [];
+
+    // Filter upcoming sessions (today or future)
+    const now = new Date();
+    const upcomingSessions = sessions.filter((s) => {
+      try {
+        const sessionDate = new Date(s.date);
+        return sessionDate >= now || s.status === 'APPROVED' || s.status === 'PENDING';
+      } catch {
+        return true;
+      }
+    });
+
+    // Calculate real average score from graded submissions
+    const gradedSubmissions = submissions.filter((s) => s.status === 'GRADED' && s.score != null);
+    const averageScore = gradedSubmissions.length > 0
+      ? Math.round(
+          gradedSubmissions.reduce((acc, s) => acc + (Number(s.score) || 0), 0) /
+            gradedSubmissions.length
+        )
+      : Number(profile.averageScore || 0);
+
+    // Calculate attendance rate if any sessions completed
+    const completedSessions = sessions.filter((s) => s.status === 'COMPLETED');
+    const attendanceRate = sessions.length > 0
+      ? Math.round((completedSessions.length / sessions.length) * 100)
+      : Number(profile.attendanceRate || 0);
+
+    const remainingPrivateCredits = profile.remainingPrivateCredits ?? 0;
+    const remainingGroupCredits = profile.remainingGroupCredits ?? 0;
+    const totalCredits = (profile.totalCredits ?? 0) || (remainingPrivateCredits + remainingGroupCredits);
+    const remainingCredits = (profile.remainingCredits ?? 0) || (remainingPrivateCredits + remainingGroupCredits);
+
     return {
+      // Return both flat student profile and keys expected by frontend
       profile,
+      student: profile,
       assignments: assignmentList,
       sessions: sessionList,
-      notifications: notificationList,
+      upcomingSessions: upcomingSessions.length > 0 ? upcomingSessions : sessions,
+      pendingAssignments: assignments,
+      recentSubmissions: submissions,
+      notifications,
+      notificationList,
       submissions: submissionList,
+      totalCredits,
+      remainingCredits,
+      remainingPrivateCredits,
+      remainingGroupCredits,
+      attendanceRate,
+      averageScore,
     };
   }
 
   async getProfile(userId: number) {
-    const [profile] = await db.select({
+    const [row] = await db.select({
       id: users.id,
       name: users.name,
       email: users.email,
@@ -118,8 +166,48 @@ export class StudentService {
       .where(eq(users.id, userId))
       .limit(1);
 
-    if (!profile) throw new Error('STUDENT_NOT_FOUND');
-    return profile;
+    if (!row) throw new Error('STUDENT_NOT_FOUND');
+
+    const sp = row.studentProfile;
+    return {
+      id: row.id,
+      userId: row.id,
+      name: row.name,
+      email: row.email,
+      phone: row.phone || sp?.studentPhone,
+      avatar: row.avatar,
+      specialty: row.specialty,
+      status: row.status,
+      role: row.role,
+      studentProfile: sp,
+      // Flattened student profile fields so frontend can access them directly
+      parentName: sp?.parentName ?? null,
+      parentEmail: sp?.parentEmail ?? null,
+      parentPhone: sp?.parentPhone ?? null,
+      gradeLevel: sp?.gradeLevel ?? null,
+      cohort: sp?.cohort ?? null,
+      totalCredits: sp?.totalCredits ?? 0,
+      remainingCredits: sp?.remainingCredits ?? 0,
+      remainingPrivateCredits: sp?.remainingPrivateCredits ?? 0,
+      remainingGroupCredits: sp?.remainingGroupCredits ?? 0,
+      attendanceRate: sp?.attendanceRate ? Number(sp.attendanceRate) : 0,
+      averageScore: sp?.averageScore ? Number(sp.averageScore) : 0,
+      enrolledCourse: sp?.enrolledCourse ?? null,
+      schoolName: sp?.schoolName ?? null,
+      academicYear: sp?.academicYear ?? sp?.year ?? null,
+      examBoard: sp?.examBoard ?? sp?.board ?? null,
+      year: sp?.year ?? sp?.academicYear ?? null,
+      board: sp?.board ?? sp?.examBoard ?? null,
+      studentPhone: sp?.studentPhone ?? row.phone ?? null,
+      examSession: sp?.examSession ?? null,
+      hardestTopic: sp?.hardestTopic ?? null,
+      meetingLink: sp?.meetingLink ?? null,
+      isAccountGranted: sp?.isAccountGranted ?? false,
+      assignedTeacherId: sp?.assignedTeacherId ?? null,
+      registeredVia: sp?.registeredVia ?? null,
+      joinedDate: sp?.joinedDate ? sp.joinedDate.toISOString() : null,
+      notes: sp?.notes ?? null,
+    };
   }
 
   async updateProfile(userId: number, data: UpdateProfileInput) {
