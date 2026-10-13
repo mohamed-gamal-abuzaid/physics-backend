@@ -135,4 +135,29 @@ describe('authentication API', () => {
       expect(res.body.errors?.board).toBeDefined();
     });
   });
+
+  describe('unified auth profile update endpoint (/api/auth/profile)', () => {
+    it('rejects unauthenticated profile update', async () => {
+      const res = await request(app).put('/api/auth/profile').send({ name: 'New Name' });
+      expect(res.status).toBe(401);
+    });
+
+    it('rejects profile update with invalid email format', async () => {
+      const token = generateToken({ id: 1, email: 'admin@example.com', role: 'ADMIN' });
+      const res = await request(app)
+        .put('/api/auth/profile')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ email: 'not-a-valid-email' });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects new password shorter than 6 characters', async () => {
+      const token = generateToken({ id: 1, email: 'admin@example.com', role: 'ADMIN' });
+      const res = await request(app)
+        .put('/api/auth/profile')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ newPassword: '123' });
+      expect(res.status).toBe(400);
+    });
+  });
 });

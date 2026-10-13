@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { register, login, googleLogin, getMe } from './auth.controller.js';
+import { register, login, googleLogin, getMe, updateProfile } from './auth.controller.js';
 import { authenticate } from '../../middlewares/auth.middleware.js';
 
 const router = Router();
@@ -94,5 +94,39 @@ router.post('/google', googleLogin);
  *         description: User not found
  */
 router.get('/me', authenticate, getMe);
+
+/**
+ * @openapi
+ * /api/auth/profile:
+ *   put:
+ *     summary: Update profile for current authenticated user
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               email: { type: string }
+ *               currentPassword: { type: string }
+ *               newPassword: { type: string }
+ *               phone: { type: string }
+ *               schoolName: { type: string }
+ *               year: { type: string }
+ *               board: { type: string }
+ *               parentName: { type: string }
+ *               parentPhone: { type: string }
+ *     responses:
+ *       200:
+ *         description: Profile updated successfully
+ *       400:
+ *         description: Validation error or wrong password
+ */
+router.put('/profile', authenticate, updateProfile);
+router.patch('/profile', authenticate, updateProfile);
 
 export default router;

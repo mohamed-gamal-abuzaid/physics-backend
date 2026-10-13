@@ -8,9 +8,11 @@ export const listSchema = paginationSchema.extend({
 });
 
 export const updateProfileSchema = z.object({
-  name: z.string().trim().min(2, 'Name must be at least 2 characters').max(50).optional(),
+  name: z.string().trim().min(2, 'Name must be at least 2 characters').max(100).optional(),
   email: z.string().trim().email('Invalid email address').toLowerCase().optional(),
-  schoolName: z.string().trim().min(1, 'School name is required').max(255).optional(),
+  currentPassword: z.string().optional(),
+  newPassword: z.string().min(6, 'Password must be at least 6 characters').optional(),
+  schoolName: z.string().trim().max(255).optional(),
   year: yearSchema.optional(),
   board: boardSchema.optional(),
   studentPhoneNumber: z.string().trim().max(20).nullable().optional(),
@@ -18,7 +20,7 @@ export const updateProfileSchema = z.object({
   parentPhoneNumber: z.string().trim().max(20).nullable().optional(),
   parentPhone: z.string().trim().max(20).nullable().optional(),
   phone: z.string().trim().max(20).nullable().optional(),
-  avatar: z.string().url().nullable().optional(),
+  avatar: z.string().nullable().optional(),
   hardestTopic: z.string().trim().max(255).nullable().optional(),
   parentName: z.string().trim().max(100).nullable().optional(),
 });

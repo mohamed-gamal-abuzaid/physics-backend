@@ -124,6 +124,25 @@ export const googleAuthSchema = z.object({
   idToken: z.string().min(1, 'Google ID token is required'),
 });
 
+export const updateUserSchema = z.object({
+  name: z.string().trim().min(2, 'Name must be at least 2 characters').max(100).optional(),
+  email: z.string().trim().email('Invalid email address').toLowerCase().optional(),
+  currentPassword: z.string().optional(),
+  newPassword: z.string().min(6, 'New password must be at least 6 characters').optional(),
+  phone: z.string().trim().max(20).nullable().optional(),
+  avatar: z.string().nullable().optional(),
+  // Student-specific fields
+  schoolName: z.string().trim().max(255).nullable().optional(),
+  year: yearSchema.nullable().optional(),
+  board: boardSchema.nullable().optional(),
+  studentPhone: z.string().trim().max(20).nullable().optional(),
+  studentPhoneNumber: z.string().trim().max(20).nullable().optional(),
+  parentName: z.string().trim().max(100).nullable().optional(),
+  parentPhone: z.string().trim().max(20).nullable().optional(),
+  parentPhoneNumber: z.string().trim().max(20).nullable().optional(),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type GoogleAuthInput = z.infer<typeof googleAuthSchema>;
+export type UpdateUserInput = z.infer<typeof updateUserSchema>;

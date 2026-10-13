@@ -28,6 +28,7 @@ import {
   UpdateProfileInput,
 } from './student.schema.js';
 import { getPagination, paginated } from '../../utils/pagination.js';
+import { hashPassword, comparePassword } from '../../utils/auth.js';
 
 function computeDiscountForPricing(
   pricingPrice: number,
@@ -223,6 +224,26 @@ export class StudentService {
       }
     }
 
+    // Password change check
+    let newHashedPassword: string | undefined;
+    if (data.newPassword) {
+      const [currentUser] = await db
+        .select({ password: users.password })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      if (currentUser?.password) {
+        if (!data.currentPassword) {
+          throw new Error('CURRENT_PASSWORD_REQUIRED');
+        }
+        const matches = await comparePassword(data.currentPassword, currentUser.password);
+        if (!matches) {
+          throw new Error('INVALID_CURRENT_PASSWORD');
+        }
+      }
+      newHashedPassword = await hashPassword(data.newPassword);
+    }
+
     const studentPhone = data.studentPhoneNumber ?? data.studentPhone ?? data.phone;
     const parentPhone = data.parentPhoneNumber ?? data.parentPhone;
 
@@ -234,6 +255,7 @@ export class StudentService {
     if (data.email !== undefined) userUpdates.email = data.email;
     if (studentPhone !== undefined) userUpdates.phone = studentPhone;
     if (data.avatar !== undefined) userUpdates.avatar = data.avatar;
+    if (newHashedPassword) userUpdates.password = newHashedPassword;
 
     const [updatedUser] = await db
       .update(users)

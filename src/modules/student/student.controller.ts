@@ -43,6 +43,8 @@ const handleError = (res: Response, error: any) => {
     STUDENT_ALREADY_IN_SESSION: 409,
     LEVEL_PRICING_NOT_FOUND: 404,
     FREE_TRIAL_ALREADY_USED: 400,
+    CURRENT_PASSWORD_REQUIRED: 400,
+    INVALID_CURRENT_PASSWORD: 400,
   };
   if (
     error.message?.startsWith('TIME_CONFLICT') ||

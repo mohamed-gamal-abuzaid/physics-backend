@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { authService } from './auth.service.js';
-import { googleAuthSchema, registerSchema, loginSchema } from './auth.schema.js';
+import { googleAuthSchema, registerSchema, loginSchema, updateUserSchema } from './auth.schema.js';
 import { AuthRequest } from '../../middlewares/auth.middleware.js';
 
 export const register = async (req: Request, res: Response) => {
@@ -85,5 +85,41 @@ export const googleLogin = async (req: Request, res: Response) => {
       return res.status(401).json({ message: 'Invalid Google ID token' });
     }
     return res.status(500).json({ message: 'An error occurred while logging in with Google' });
+  }
+};
+
+export const updateProfile = async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: 'Not authorized' });
+    }
+
+    const validation = updateUserSchema.safeParse(req.body);
+    if (!validation.success) {
+      const firstIssue = validation.error.issues[0]?.message || 'Validation failed';
+      return res.status(400).json({ message: firstIssue, errors: validation.error.format() });
+    }
+
+    const updatedUser = await authService.updateProfile(req.user.id, validation.data);
+    return res.json({
+      message: 'Profile updated successfully',
+      user: updatedUser,
+      ...updatedUser,
+    });
+  } catch (error: any) {
+    if (error.message === 'EMAIL_EXISTS') {
+      return res.status(400).json({ message: 'Email is already in use by another account' });
+    }
+    if (error.message === 'CURRENT_PASSWORD_REQUIRED') {
+      return res.status(400).json({ message: 'Current password is required to set a new password' });
+    }
+    if (error.message === 'INVALID_CURRENT_PASSWORD') {
+      return res.status(400).json({ message: 'Current password is incorrect' });
+    }
+    if (error.message === 'USER_NOT_FOUND') {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    console.error('UPDATE PROFILE ERROR:', error);
+    return res.status(500).json({ message: 'An error occurred while updating profile', error: error.message });
   }
 };
