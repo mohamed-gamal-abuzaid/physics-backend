@@ -1764,6 +1764,31 @@ export class AdminService {
       studentId,
     });
 
+    // Update student's session count / credits balance
+    const isPrivate = session.sessionFormat === 'PRIVATE';
+    await db
+      .update(studentProfiles)
+      .set({
+        totalCredits: sql`COALESCE(${studentProfiles.totalCredits}, 0) + 1`,
+        remainingCredits: sql`COALESCE(${studentProfiles.remainingCredits}, 0) + 1`,
+        ...(isPrivate
+          ? { remainingPrivateCredits: sql`COALESCE(${studentProfiles.remainingPrivateCredits}, 0) + 1` }
+          : { remainingGroupCredits: sql`COALESCE(${studentProfiles.remainingGroupCredits}, 0) + 1` }),
+      })
+      .where(eq(studentProfiles.userId, studentId));
+
+    // Send in-app notification to the student
+    const sessionDateFormatted = session.date ? new Date(session.date).toLocaleDateString() : '';
+    const sessionTimeStr = session.time ? ` at ${session.time}` : '';
+    await db.insert(notifications).values({
+      userId: studentId,
+      title: 'New Session Assigned to You! 🎓',
+      message: `You have been added to session "${session.topic || session.courseName || 'Physics Class'}" scheduled on ${sessionDateFormatted}${sessionTimeStr}. +1 session credit has been added to your balance!`,
+      type: 'SESSION',
+      linkTab: 'schedule',
+      read: false,
+    });
+
     await this.logAudit(adminId, 'ADD_STUDENT_TO_SESSION', {
       studentId,
       sessionId,
@@ -1772,7 +1797,7 @@ export class AdminService {
 
     return {
       success: true,
-      message: 'Student added to session successfully',
+      message: 'Student added to session and notified successfully, credit added to balance',
       studentId,
       sessionId,
     };
